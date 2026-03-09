@@ -1,6 +1,6 @@
 # YouTubeOnMac
 
-![YouTubeOnMac](https://i.imgur.com/IdCeRJF.png)
+![YouTubeOnMac](https://imgur.com/a/dPFDVDI)
 
 YouTubeOnMac is a webview wrapper for YouTube for macOS.
 
