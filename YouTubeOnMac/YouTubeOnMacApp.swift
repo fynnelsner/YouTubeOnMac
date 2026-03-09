@@ -1,6 +1,6 @@
 //
-//  MacTubeApp.swift
-//  MacTube
+//  YouTubeOnMacApp.swift
+//  YouTubeOnMac
 //
 //  Created by Kevin Dion on 2022-02-23.
 //
@@ -9,7 +9,7 @@ import SwiftUI
 import AppKit
 
 @main
-struct MacTubeApp: App {
+struct YouTubeOnMacApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

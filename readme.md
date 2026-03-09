@@ -2,9 +2,11 @@
 
 ![YouTubeOnMac](https://i.imgur.com/IdCeRJF.png)
 
-YouTubeOnMac is a webview wrapper for YouTube for Mac OS. 
+YouTubeOnMac is a webview wrapper for YouTube for macOS.
 
 It was made for people who prefer Safari and don't want to have to open Chrome just to launch their official web app.
+
+[Download the latest version here.](https://github.com/devyytrades/YouTubeOnMac/releases)
 
 ## Malicious Software Warning
 
