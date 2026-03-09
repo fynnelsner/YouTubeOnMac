@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  MacTube
+//  YouTubeOnMac
 //
 //  Created by Kevin Dion on 2022-02-23.
 //
@@ -31,7 +31,7 @@ struct ContentView: View {
                 if !webViewState.isVideoFullscreen {
                     Spacer()
                     
-                    Text("MacTube")
+                    Text("YouTubeOnMac")
                         .padding(.leading, 110)
                     
                     Spacer()
@@ -82,10 +82,10 @@ struct WebView: NSViewRepresentable {
         let inlineFullscreenScript = """
         (() => {
           if (!window.location.hostname.includes("youtube.com")) return;
-          if (window.__mactubeInlineFullscreenInstalled) return;
-          window.__mactubeInlineFullscreenInstalled = true;
+          if (window.__youTubeOnMacInlineFullscreenInstalled) return;
+          window.__youTubeOnMacInlineFullscreenInstalled = true;
 
-          const STYLE_ID = "mactube-inline-fullscreen-style";
+          const STYLE_ID = "youtubeonmac-inline-fullscreen-style";
           let pseudoFullscreen = false;
 
           const installStyle = () => {
@@ -93,23 +93,23 @@ struct WebView: NSViewRepresentable {
             const style = document.createElement("style");
             style.id = STYLE_ID;
             style.textContent = `
-              html.mactube-inline-fs,
-              body.mactube-inline-fs {
+              html.youtubeonmac-inline-fs,
+              body.youtubeonmac-inline-fs {
                 overflow: hidden !important;
               }
-              html.mactube-inline-fs ytd-masthead,
-              html.mactube-inline-fs #secondary,
-              html.mactube-inline-fs #chat,
-              html.mactube-inline-fs #below,
-              html.mactube-inline-fs #comments {
+              html.youtubeonmac-inline-fs ytd-masthead,
+              html.youtubeonmac-inline-fs #secondary,
+              html.youtubeonmac-inline-fs #chat,
+              html.youtubeonmac-inline-fs #below,
+              html.youtubeonmac-inline-fs #comments {
                 display: none !important;
               }
-              html.mactube-inline-fs ytd-watch-flexy #primary {
+              html.youtubeonmac-inline-fs ytd-watch-flexy #primary {
                 margin: 0 !important;
                 width: 100% !important;
                 max-width: 100% !important;
               }
-              .html5-video-player.mactube-inline-fs-player {
+              .html5-video-player.youtubeonmac-inline-fs-player {
                 position: fixed !important;
                 inset: 0 !important;
                 width: 100vw !important;
@@ -117,12 +117,12 @@ struct WebView: NSViewRepresentable {
                 z-index: 2147483647 !important;
                 background: #000 !important;
               }
-              .html5-video-player.mactube-inline-fs-player .html5-video-container,
-              .html5-video-player.mactube-inline-fs-player video {
+              .html5-video-player.youtubeonmac-inline-fs-player .html5-video-container,
+              .html5-video-player.youtubeonmac-inline-fs-player video {
                 width: 100% !important;
                 height: 100% !important;
               }
-              .html5-video-player.mactube-inline-fs-player .html5-video-container {
+              .html5-video-player.youtubeonmac-inline-fs-player .html5-video-container {
                 position: absolute !important;
                 inset: 0 !important;
                 display: flex !important;
@@ -130,7 +130,7 @@ struct WebView: NSViewRepresentable {
                 justify-content: center !important;
                 transform: none !important;
               }
-              .html5-video-player.mactube-inline-fs-player video {
+              .html5-video-player.youtubeonmac-inline-fs-player video {
                 object-fit: contain !important;
                 object-position: center center !important;
                 width: auto !important;
@@ -144,17 +144,17 @@ struct WebView: NSViewRepresentable {
                 transform: none !important;
                 margin: auto !important;
               }
-              .html5-video-player.mactube-inline-fs-player .ytp-chrome-bottom {
+              .html5-video-player.youtubeonmac-inline-fs-player .ytp-chrome-bottom {
                 left: 0 !important;
                 width: 100% !important;
               }
-              .html5-video-player.mactube-inline-fs-player .ytp-chrome-controls {
+              .html5-video-player.youtubeonmac-inline-fs-player .ytp-chrome-controls {
                 width: 100% !important;
               }
-              .html5-video-player.mactube-inline-fs-player .ytp-right-controls {
+              .html5-video-player.youtubeonmac-inline-fs-player .ytp-right-controls {
                 margin-right: 12px !important;
               }
-              .html5-video-player.mactube-inline-fs-player .ytp-progress-bar-container {
+              .html5-video-player.youtubeonmac-inline-fs-player .ytp-progress-bar-container {
                 left: 12px !important;
                 right: 12px !important;
                 width: auto !important;
@@ -170,26 +170,26 @@ struct WebView: NSViewRepresentable {
             const player = getPlayer();
             if (!player) return;
             pseudoFullscreen = true;
-            document.documentElement.classList.add("mactube-inline-fs");
-            document.body.classList.add("mactube-inline-fs");
-            player.classList.add("mactube-inline-fs-player");
+            document.documentElement.classList.add("youtubeonmac-inline-fs");
+            document.body.classList.add("youtubeonmac-inline-fs");
+            player.classList.add("youtubeonmac-inline-fs-player");
             player.classList.add("ytp-fullscreen");
             try {
-              window.webkit?.messageHandlers?.mactubeFullscreen?.postMessage(true);
+              window.webkit?.messageHandlers?.youTubeOnMacFullscreen?.postMessage(true);
             } catch {}
           };
 
           const exitPseudoFullscreen = () => {
             const player = getPlayer();
             pseudoFullscreen = false;
-            document.documentElement.classList.remove("mactube-inline-fs");
-            document.body.classList.remove("mactube-inline-fs");
+            document.documentElement.classList.remove("youtubeonmac-inline-fs");
+            document.body.classList.remove("youtubeonmac-inline-fs");
             if (player) {
-              player.classList.remove("mactube-inline-fs-player");
+              player.classList.remove("youtubeonmac-inline-fs-player");
               player.classList.remove("ytp-fullscreen");
             }
             try {
-              window.webkit?.messageHandlers?.mactubeFullscreen?.postMessage(false);
+              window.webkit?.messageHandlers?.youTubeOnMacFullscreen?.postMessage(false);
             } catch {}
           };
 
@@ -203,7 +203,7 @@ struct WebView: NSViewRepresentable {
 
           const patch = (obj, name, replacement) => {
             if (!obj || typeof obj[name] !== "function") return;
-            const key = "__mactubePatched_" + name;
+            const key = "__youTubeOnMacPatched_" + name;
             if (obj[key]) return;
             const original = obj[name];
             obj[key] = original;
@@ -290,8 +290,8 @@ struct WebView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> WKWebView {
-        wkWebView.configuration.userContentController.removeScriptMessageHandler(forName: "mactubeFullscreen")
-        wkWebView.configuration.userContentController.add(context.coordinator, name: "mactubeFullscreen")
+        wkWebView.configuration.userContentController.removeScriptMessageHandler(forName: "youTubeOnMacFullscreen")
+        wkWebView.configuration.userContentController.add(context.coordinator, name: "youTubeOnMacFullscreen")
 
         if let url = URL(string: "https://www.youtube.com") {
             if wkWebView.url == nil {
@@ -314,7 +314,7 @@ struct WebView: NSViewRepresentable {
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "mactubeFullscreen" else { return }
+            guard message.name == "youTubeOnMacFullscreen" else { return }
             guard let isFullscreen = message.body as? Bool else { return }
             DispatchQueue.main.async {
                 self.state.isVideoFullscreen = isFullscreen
