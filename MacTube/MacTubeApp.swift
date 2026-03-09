@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 @main
 struct MacTubeApp: App {
@@ -14,5 +15,13 @@ struct MacTubeApp: App {
             ContentView()
         }
         .windowStyle(HiddenTitleBarWindowStyle())
+        .commands {
+            CommandGroup(after: .windowArrangement) {
+                Button("Toggle Full Screen") {
+                    NSApp.keyWindow?.toggleFullScreen(nil)
+                }
+                .keyboardShortcut("f", modifiers: [.control, .command])
+            }
+        }
     }
 }
