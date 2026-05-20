@@ -11,3 +11,4 @@ dmg-layout-*/
 
 # macOS
 .DS_Store
+*.dmg
