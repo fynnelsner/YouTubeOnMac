@@ -596,6 +596,24 @@ struct WebView: NSViewRepresentable {
                 self.navState.canGoForward = wv.canGoForward
             }
         }
+
+        func webView(_ wv: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+            let host = url.host?.lowercased() ?? ""
+            let isYouTube = host.contains("youtube.com") || host.contains("youtube-nocookie.com") || host.contains("google.com") || host.contains("googlevideo.com")
+            if isYouTube {
+                decisionHandler(.allow)
+                return
+            }
+            // External link — open in default browser
+            DispatchQueue.main.async {
+                NSWorkspace.shared.open(url)
+            }
+            decisionHandler(.cancel)
+        }
     }
 
     // MARK: - JS
