@@ -569,7 +569,9 @@ struct WebView: NSViewRepresentable {
         wkWebView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15"
         wkWebView.navigationDelegate = context.coordinator
         wkWebView.configuration.userContentController.removeScriptMessageHandler(forName: "yomFs")
+        wkWebView.configuration.userContentController.removeScriptMessageHandler(forName: "yomLink")
         wkWebView.configuration.userContentController.add(context.coordinator, name: "yomFs")
+        wkWebView.configuration.userContentController.add(context.coordinator, name: "yomLink")
         if wkWebView.url == nil, let url = URL(string: "https://www.youtube.com") {
             wkWebView.load(URLRequest(url: url))
         }
@@ -586,8 +588,16 @@ struct WebView: NSViewRepresentable {
         init(state: WebViewState, navState: NavState) { self.state = state; self.navState = navState }
 
         func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
-            guard msg.name == "yomFs", let v = msg.body as? Bool else { return }
-            DispatchQueue.main.async { self.state.isVideoFullscreen = v }
+            switch msg.name {
+            case "yomFs":
+                guard let v = msg.body as? Bool else { return }
+                DispatchQueue.main.async { self.state.isVideoFullscreen = v }
+            case "yomLink":
+                guard let urlString = msg.body as? String, let url = URL(string: urlString) else { return }
+                DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+            default:
+                break
+            }
         }
 
         func webView(_ wv: WKWebView, didFinish nav: WKNavigation!) {
@@ -792,6 +802,40 @@ struct WebView: NSViewRepresentable {
 
       setInterval(nukeDomAds,50);
       console.log("[YOM] ad blocker active");
+
+      // ── External Links ─────────────────────────────
+      // Intercept clicks on <a> tags and window.open() calls so they open in Safari
+      const isExternal=(url)=>{
+        if(!url)return false;
+        try{
+          const u=new URL(url,window.location.href);
+          const h=u.hostname.toLowerCase();
+          return u.protocol==="http:"||u.protocol==="https:"?
+                 !(h.includes("youtube.com")||h.includes("youtube-nocookie.com")||h.includes("google.com")||h.includes("googlevideo.com")):false;
+        }catch(e){return false;}
+      };
+
+      document.addEventListener("click",e=>{
+        const a=e.composedPath().find(el=> el instanceof Element&&el.closest?.("a[href],a[data-target]"));
+        if(!a)return;
+        const href=a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||"";
+        if(!href||href.startsWith("#")||href.startsWith("javascript:"))return;
+        if(isExternal(href)){
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          try{webkit.messageHandlers.yomLink.postMessage(href);}catch(err){window.open(href,"_blank");}
+        }
+      },true);
+
+      // Hook window.open to catch JS-driven external links
+      const _origOpen=window.open;
+      window.open=function(url,target,features){
+        if(isExternal(url)){
+          try{webkit.messageHandlers.yomLink.postMessage(url);return null;}catch(err){}
+        }
+        return _origOpen.call(this,url,target,features);
+      };
     })();
     """
 }
