@@ -602,6 +602,12 @@ struct WebView: NSViewRepresentable {
                 decisionHandler(.allow)
                 return
             }
+            let scheme = url.scheme?.lowercased() ?? ""
+            // Only handle http/https links externally; allow about:blank, javascript:, mailto:, etc. to stay in the webview or be cancelled
+            guard scheme == "http" || scheme == "https" else {
+                decisionHandler(.allow)
+                return
+            }
             let host = url.host?.lowercased() ?? ""
             let isYouTube = host.contains("youtube.com") || host.contains("youtube-nocookie.com") || host.contains("google.com") || host.contains("googlevideo.com")
             if isYouTube {
