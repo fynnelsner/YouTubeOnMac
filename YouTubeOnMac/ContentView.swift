@@ -568,6 +568,7 @@ struct WebView: NSViewRepresentable {
 
         wkWebView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15"
         wkWebView.navigationDelegate = context.coordinator
+        wkWebView.uiDelegate = context.coordinator
         wkWebView.configuration.userContentController.removeScriptMessageHandler(forName: "yomFs")
         wkWebView.configuration.userContentController.removeScriptMessageHandler(forName: "yomLink")
         wkWebView.configuration.userContentController.add(context.coordinator, name: "yomFs")
@@ -582,7 +583,7 @@ struct WebView: NSViewRepresentable {
 
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
         private let state: WebViewState
         private let navState: NavState
         init(state: WebViewState, navState: NavState) { self.state = state; self.navState = navState }
@@ -598,6 +599,14 @@ struct WebView: NSViewRepresentable {
             default:
                 break
             }
+        }
+
+        // MARK: - WKUIDelegate (handles window.open / target="_blank")
+        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            if let url = navigationAction.request.url {
+                DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+            }
+            return nil
         }
 
         func webView(_ wv: WKWebView, didFinish nav: WKNavigation!) {
@@ -804,9 +813,10 @@ struct WebView: NSViewRepresentable {
       console.log("[YOM] ad blocker active");
 
       // ── External Links ─────────────────────────────
-      // Intercept ALL link clicks before YouTube's event delegation swallows them.
-      // Handles: normal <a> tags, shadow-DOM links, role="link" buttons,
-      //          window.open(), and window.location mutations.
+      // Strategy: patch EVERY <a> tag as it enters the DOM with a capture-phase
+      // click listener directly on the element. YouTube's delegated event handlers
+      // (bubble phase on parent elements) can't stop us because capture runs first.
+      // Also hooks window.open and location mutations for JS-driven opens.
 
       const isExternal=(url)=>{
         if(!url||typeof url!=="string")return false;
@@ -814,69 +824,73 @@ struct WebView: NSViewRepresentable {
           const u=new URL(url,window.location.href);
           const h=u.hostname.toLowerCase();
           return (u.protocol==="http:"||u.protocol==="https:")
-                 &&!(h.includes("youtube.com")||h.includes("youtube-nocookie.com")||h.includes("google.com")||h.includes("googlevideo.com"));
+                 &&!(h.endsWith("youtube.com")||h.endsWith("youtube-nocookie.com")||h.endsWith("google.com")||h.endsWith("googlevideo.com"));
         }catch(e){return false;}
       };
 
       const openExternal=(url)=>{
         if(!isExternal(url))return false;
-        console.log("[YOM] opening external:",url);
-        try{webkit.messageHandlers.yomLink.postMessage(url);return true;}catch(err){
-          console.log("[YOM] webkit msg failed, trying window.open",err);
-          window.open(url,"_blank");return true;
-        }
+        console.log("[YOM] external:",url);
+        // Primary: window.open triggers WKUIDelegate.createWebViewWith → opens in default browser
+        try{window.open(url,"_blank");return true;}catch(e){}
+        // Fallback: webkit message handler
+        try{webkit.messageHandlers.yomLink.postMessage(url);return true;}catch(e){}
+        return false;
       };
 
-      // 1) Helper: find actual anchor from an event
-      const findAnchor=(e)=>{
-        // Standard path
-        let a=e.target?.closest?.("a[href],a[data-target],a[data-url],a[data-href],*[role='link']");
-        if(a)return a;
-        // Shadow-DOM / composed path
-        if(e.composedPath){
-          for(const el of e.composedPath()){
-            if(!(el instanceof Element))continue;
-            if(el.tagName==="A")return el;
-            const anc=el.closest?.("a[href],a[data-target],a[data-url],a[data-href]");
-            if(anc)return anc;
+      // Patch an individual anchor element
+      const patchAnchor=(a)=>{
+        if(a.dataset?.yomPatched)return;
+        a.dataset.yomPatched="1";
+        a.addEventListener("click",(e)=>{
+          const raw=a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||a.getAttribute("data-href")||"";
+          const url=a.href||raw;  // a.href gives absolute URL
+          if(!url||url.startsWith("#")||url.startsWith("javascript:")||url==="about:blank")return;
+          if(isExternal(url)){
+            e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+            openExternal(url);
           }
-        }
-        return null;
+        },true);
+        // Also intercept CMD+click and middle-click via auxclick
+        a.addEventListener("auxclick",(e)=>{
+          const url=a.href||a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||"";
+          if(isExternal(url)){
+            e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+            openExternal(url);
+          }
+        },true);
       };
 
-      // 2) Capture-phase click/mousedown/pointerdown
-      const handlePress=(e)=>{
-        const a=findAnchor(e);
-        if(!a){
-          // Check if target itself is a link-like button
-          if(e.target?.getAttribute?.("role")==="link"){
-            const url=e.target.getAttribute("data-target")||e.target.getAttribute("data-url")||e.target.getAttribute("href")||e.target.getAttribute("data-href");
-            if(url&&isExternal(url)){
+      // Walk all existing anchors and patch them
+      const patchAllAnchors=()=>{
+        document.querySelectorAll('a[href]:not([data-yom-patched]), a[data-target]:not([data-yom-patched]), a[data-url]:not([data-yom-patched])').forEach(patchAnchor);
+        // Also patch role="link" elements
+        document.querySelectorAll('[role="link"]:not([data-yom-patched])').forEach(el=>{
+          if(el.dataset?.yomPatched)return;
+          el.dataset.yomPatched="1";
+          el.addEventListener("click",(e)=>{
+            const url=el.getAttribute("data-target")||el.getAttribute("data-url")||el.getAttribute("href")||el.getAttribute("data-href")||"";
+            if(isExternal(url)){
               e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-              openExternal(url);return;
+              openExternal(url);
             }
-          }
-          return;
-        }
-        let url=a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||a.getAttribute("data-href")||a.href||"";
-        if(!url||url.startsWith("#")||url.startsWith("javascript:")||url==="about:blank")return;
-        if(isExternal(url)){
-          e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-          openExternal(url);
-        }
+          },true);
+        });
       };
-      window.addEventListener("click",handlePress,true);
-      window.addEventListener("mousedown",handlePress,true);
-      window.addEventListener("pointerdown",handlePress,true);
 
-      // 3) Hook window.open
+      // MutationObserver watches for NEW anchors entering the tree
+      const linkObs=new MutationObserver(()=>patchAllAnchors());
+      linkObs.observe(document.documentElement,{childList:true,subtree:true});
+      patchAllAnchors();
+
+      // Hook window.open for JS-driven external opens
       const _origOpen=window.open;
       window.open=function(url,target,features){
         if(isExternal(url)){openExternal(url);return null;}
         return _origOpen.call(this,url,target,features);
       };
 
-      // 4) Hook location mutations (some YouTube links mutate location instead of navigating)
+      // Hook location mutations
       const _origAssign=window.location.assign;
       window.location.assign=function(url){
         if(isExternal(url)){openExternal(url);return;}
