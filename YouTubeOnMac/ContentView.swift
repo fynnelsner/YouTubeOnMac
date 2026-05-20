@@ -804,38 +804,95 @@ struct WebView: NSViewRepresentable {
       console.log("[YOM] ad blocker active");
 
       // ── External Links ─────────────────────────────
-      // Intercept clicks on <a> tags and window.open() calls so they open in Safari
+      // Intercept ALL link clicks before YouTube's event delegation swallows them.
+      // Handles: normal <a> tags, shadow-DOM links, role="link" buttons,
+      //          window.open(), and window.location mutations.
+
       const isExternal=(url)=>{
-        if(!url)return false;
+        if(!url||typeof url!=="string")return false;
         try{
           const u=new URL(url,window.location.href);
           const h=u.hostname.toLowerCase();
-          return u.protocol==="http:"||u.protocol==="https:"?
-                 !(h.includes("youtube.com")||h.includes("youtube-nocookie.com")||h.includes("google.com")||h.includes("googlevideo.com")):false;
+          return (u.protocol==="http:"||u.protocol==="https:")
+                 &&!(h.includes("youtube.com")||h.includes("youtube-nocookie.com")||h.includes("google.com")||h.includes("googlevideo.com"));
         }catch(e){return false;}
       };
 
-      document.addEventListener("click",e=>{
-        const a=e.composedPath().find(el=> el instanceof Element&&el.closest?.("a[href],a[data-target]"));
-        if(!a)return;
-        const href=a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||"";
-        if(!href||href.startsWith("#")||href.startsWith("javascript:"))return;
-        if(isExternal(href)){
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          try{webkit.messageHandlers.yomLink.postMessage(href);}catch(err){window.open(href,"_blank");}
+      const openExternal=(url)=>{
+        if(!isExternal(url))return false;
+        console.log("[YOM] opening external:",url);
+        try{webkit.messageHandlers.yomLink.postMessage(url);return true;}catch(err){
+          console.log("[YOM] webkit msg failed, trying window.open",err);
+          window.open(url,"_blank");return true;
         }
-      },true);
+      };
 
-      // Hook window.open to catch JS-driven external links
+      // 1) Helper: find actual anchor from an event
+      const findAnchor=(e)=>{
+        // Standard path
+        let a=e.target?.closest?.("a[href],a[data-target],a[data-url],a[data-href],*[role='link']");
+        if(a)return a;
+        // Shadow-DOM / composed path
+        if(e.composedPath){
+          for(const el of e.composedPath()){
+            if(!(el instanceof Element))continue;
+            if(el.tagName==="A")return el;
+            const anc=el.closest?.("a[href],a[data-target],a[data-url],a[data-href]");
+            if(anc)return anc;
+          }
+        }
+        return null;
+      };
+
+      // 2) Capture-phase click/mousedown/pointerdown
+      const handlePress=(e)=>{
+        const a=findAnchor(e);
+        if(!a){
+          // Check if target itself is a link-like button
+          if(e.target?.getAttribute?.("role")==="link"){
+            const url=e.target.getAttribute("data-target")||e.target.getAttribute("data-url")||e.target.getAttribute("href")||e.target.getAttribute("data-href");
+            if(url&&isExternal(url)){
+              e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+              openExternal(url);return;
+            }
+          }
+          return;
+        }
+        let url=a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||a.getAttribute("data-href")||a.href||"";
+        if(!url||url.startsWith("#")||url.startsWith("javascript:")||url==="about:blank")return;
+        if(isExternal(url)){
+          e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+          openExternal(url);
+        }
+      };
+      window.addEventListener("click",handlePress,true);
+      window.addEventListener("mousedown",handlePress,true);
+      window.addEventListener("pointerdown",handlePress,true);
+
+      // 3) Hook window.open
       const _origOpen=window.open;
       window.open=function(url,target,features){
-        if(isExternal(url)){
-          try{webkit.messageHandlers.yomLink.postMessage(url);return null;}catch(err){}
-        }
+        if(isExternal(url)){openExternal(url);return null;}
         return _origOpen.call(this,url,target,features);
       };
+
+      // 4) Hook location mutations (some YouTube links mutate location instead of navigating)
+      const _origAssign=window.location.assign;
+      window.location.assign=function(url){
+        if(isExternal(url)){openExternal(url);return;}
+        return _origAssign.call(this,url);
+      };
+      const _origReplace=window.location.replace;
+      window.location.replace=function(url){
+        if(isExternal(url)){openExternal(url);return;}
+        return _origReplace.call(this,url);
+      };
+      let _locHref=window.location.href;
+      Object.defineProperty(window.location,"href",{
+        get(){return _locHref;},
+        set(v){if(isExternal(v)){openExternal(v);return;}_locHref=v;window.location.assign(v);},
+        configurable:true
+      });
     })();
     """
 }
