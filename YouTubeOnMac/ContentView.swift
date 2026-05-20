@@ -595,6 +595,7 @@ struct WebView: NSViewRepresentable {
                 DispatchQueue.main.async { self.state.isVideoFullscreen = v }
             case "yomLink":
                 guard let urlString = msg.body as? String, let url = URL(string: urlString) else { return }
+                print("[YOM] Swift opening URL:", urlString)
                 DispatchQueue.main.async { NSWorkspace.shared.open(url) }
             default:
                 break
@@ -816,7 +817,17 @@ struct WebView: NSViewRepresentable {
       // Strategy: patch EVERY <a> tag as it enters the DOM with a capture-phase
       // click listener directly on the element. YouTube's delegated event handlers
       // (bubble phase on parent elements) can't stop us because capture runs first.
-      // Also hooks window.open and location mutations for JS-driven opens.
+      // Also unwrap YouTube redirect URLs and hooks window.open/location.
+      // ONLY mechanism: webkit.messageHandlers.yomLink — never window.open (shows dialog).
+
+      // Unwrap youtube.com/redirect?q=... wrapper URLs
+      const unwrapRedirect=(url)=>{
+        if(typeof url!=="string")return url;
+        if(url.includes("youtube.com/redirect")||url.includes("youtube.com/shorts/redirect")){
+          try{const u=new URL(url);const t=u.searchParams.get("q")||u.searchParams.get("url");if(t)return t;}catch(e){}
+        }
+        return url;
+      };
 
       const isExternal=(url)=>{
         if(!url||typeof url!=="string")return false;
@@ -830,11 +841,12 @@ struct WebView: NSViewRepresentable {
 
       const openExternal=(url)=>{
         if(!isExternal(url))return false;
-        console.log("[YOM] external:",url);
-        // Primary: webkit message handler (bypasses WebKit security dialog)
-        try{webkit.messageHandlers.yomLink.postMessage(url);return true;}catch(e){}
-        // Fallback: window.open triggers WKUIDelegate.createWebViewWith
-        try{window.open(url,"_blank");return true;}catch(e){}
+        console.log("[YOM] opening external:",url);
+        if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.yomLink){
+          window.webkit.messageHandlers.yomLink.postMessage(url);
+          return true;
+        }
+        console.error("[YOM] yomLink handler missing — link cannot open");
         return false;
       };
 
@@ -844,16 +856,15 @@ struct WebView: NSViewRepresentable {
         a.dataset.yomPatched="1";
         a.addEventListener("click",(e)=>{
           const raw=a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||a.getAttribute("data-href")||"";
-          const url=a.href||raw;  // a.href gives absolute URL
+          const url=unwrapRedirect(a.href||raw);
           if(!url||url.startsWith("#")||url.startsWith("javascript:")||url==="about:blank")return;
           if(isExternal(url)){
             e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
             openExternal(url);
           }
         },true);
-        // Also intercept CMD+click and middle-click via auxclick
         a.addEventListener("auxclick",(e)=>{
-          const url=a.href||a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||"";
+          const url=unwrapRedirect(a.href||a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||"");
           if(isExternal(url)){
             e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
             openExternal(url);
@@ -861,15 +872,13 @@ struct WebView: NSViewRepresentable {
         },true);
       };
 
-      // Walk all existing anchors and patch them
       const patchAllAnchors=()=>{
-        document.querySelectorAll('a[href]:not([data-yom-patched]), a[data-target]:not([data-yom-patched]), a[data-url]:not([data-yom-patched])').forEach(patchAnchor);
-        // Also patch role="link" elements
+        document.querySelectorAll('a[href]:not([data-yom-patched]),a[data-target]:not([data-yom-patched]),a[data-url]:not([data-yom-patched])').forEach(patchAnchor);
         document.querySelectorAll('[role="link"]:not([data-yom-patched])').forEach(el=>{
           if(el.dataset?.yomPatched)return;
           el.dataset.yomPatched="1";
           el.addEventListener("click",(e)=>{
-            const url=el.getAttribute("data-target")||el.getAttribute("data-url")||el.getAttribute("href")||el.getAttribute("data-href")||"";
+            const url=unwrapRedirect(el.getAttribute("data-target")||el.getAttribute("data-url")||el.getAttribute("href")||el.getAttribute("data-href")||"");
             if(isExternal(url)){
               e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
               openExternal(url);
@@ -878,35 +887,46 @@ struct WebView: NSViewRepresentable {
         });
       };
 
-      // MutationObserver watches for NEW anchors entering the tree
       const linkObs=new MutationObserver(()=>patchAllAnchors());
       linkObs.observe(document.documentElement,{childList:true,subtree:true});
       patchAllAnchors();
 
-      // Hook window.open for JS-driven external opens
+      // Hook window.open — only use webkit message handler, never call original for external
       const _origOpen=window.open;
       window.open=function(url,target,features){
-        if(isExternal(url)){openExternal(url);return null;}
+        const real=unwrapRedirect(url);
+        if(isExternal(real)){
+          const ok=openExternal(real);
+          return null;  // never call original — avoids WebKit security dialog
+        }
         return _origOpen.call(this,url,target,features);
       };
 
       // Hook location mutations
       const _origAssign=window.location.assign;
       window.location.assign=function(url){
-        if(isExternal(url)){openExternal(url);return;}
+        const real=unwrapRedirect(url);
+        if(isExternal(real)){openExternal(real);return;}
         return _origAssign.call(this,url);
       };
       const _origReplace=window.location.replace;
       window.location.replace=function(url){
-        if(isExternal(url)){openExternal(url);return;}
+        const real=unwrapRedirect(url);
+        if(isExternal(real)){openExternal(real);return;}
         return _origReplace.call(this,url);
       };
       let _locHref=window.location.href;
       Object.defineProperty(window.location,"href",{
         get(){return _locHref;},
-        set(v){if(isExternal(v)){openExternal(v);return;}_locHref=v;window.location.assign(v);},
+        set(v){
+          const real=unwrapRedirect(v);
+          if(isExternal(real)){openExternal(real);return;}
+          _locHref=v;window.location.assign(v);
+        },
         configurable:true
       });
+
+      console.log("[YOM] link interceptor active — handler exists:",!!(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.yomLink));
     })();
     """
 }
