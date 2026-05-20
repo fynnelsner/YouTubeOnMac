@@ -635,10 +635,70 @@ struct WebView: NSViewRepresentable {
       window.yomSetSpeed=s=>{const v=V();if(v){v.playbackRate=s;return}let c=0;const r=setInterval(()=>{const v2=V();if(v2){v2.playbackRate=s;clearInterval(r)}if(++c>10)clearInterval(r)},300)};
 
       // ── Ad Block ───────────────────────────────────
-      // Strategy: strip ad metadata from player API responses BEFORE YouTube's JS sees it.
-      // Also CSS-hide any ad DOM nodes that slip through, and remove them from the tree.
+      // Strategy: hook JSON.parse so EVERY parsed player response is stripped of ad metadata
+      // before YouTube's player code ever sees it. Also CSS-hide + nuke any ad DOM that slips through.
 
-      const AD_SELECTORS = `
+      // 1) Global JSON.parse hook — catches fetch().json(), XHR responseText, and any internal parser
+      const stripAds=(obj)=>{
+        if(!obj||typeof obj!=="object")return;
+        if(Array.isArray(obj.adPlacements))obj.adPlacements=[];
+        if(Array.isArray(obj.playerAds))obj.playerAds=[];
+        delete obj.adBreakHeartbeatParams;
+        delete obj.adSlots;
+        delete obj.adBreakUiElements;
+        if(obj.auxiliaryUi?.messageRenderers){
+          for(const k of Object.keys(obj.auxiliaryUi.messageRenderers)){
+            if(/ad|promo|shopping|merch/i.test(k))delete obj.auxiliaryUi.messageRenderers[k];
+          }
+        }
+        if(obj.webResponseContextExtensionData?.yrf){
+          delete obj.webResponseContextExtensionData.yrf;
+        }
+        for(const k of Object.keys(obj)){
+          const v=obj[k];
+          if(v&&typeof v==="object")stripAds(v);
+        }
+      };
+
+      const _origJSONParse=JSON.parse;
+      JSON.parse=function(text,reviver){
+        try{
+          const r=_origJSONParse.call(this,text,reviver);
+          if(r&&typeof r==="object")stripAds(r);
+          return r;
+        }catch(e){return _origJSONParse.call(this,text,reviver);}
+      };
+
+      // 2) Hook Response.prototype.json for fetch() path
+      const _origRespJson=Response.prototype.json;
+      Response.prototype.json=async function(){
+        const r=await _origRespJson.call(this);
+        if(r&&typeof r==="object")stripAds(r);
+        return r;
+      };
+
+      // 3) Intercept ytInitialPlayerResponse (set by inline script before this runs)
+      try{
+        if(window.ytInitialPlayerResponse)stripAds(window.ytInitialPlayerResponse);
+        let _ytipr=window.ytInitialPlayerResponse;
+        Object.defineProperty(window,"ytInitialPlayerResponse",{
+          get(){return _ytipr;},
+          set(v){_ytipr=v;stripAds(_ytipr);},
+          configurable:true
+        });
+      }catch(e){}
+
+      // 4) Also intercept ytplayer.config.args.player_response if present
+      try{
+        if(window.ytplayer?.config?.args?.player_response){
+          const pr=JSON.parse(window.ytplayer.config.args.player_response);
+          stripAds(pr);
+          window.ytplayer.config.args.player_response=JSON.stringify(pr);
+        }
+      }catch(e){}
+
+      // 5) CSS-hide ad DOM nodes
+      const adCSS=`
         .video-ads,.ytp-ad-module,.ytp-ad-player-overlay,.ytp-ad-overlay-container,
         .ytp-ad-overlay-slot,.ytp-ad-image-overlay,.ytp-ad-text,.ytp-ad-preview-container,
         .ytp-ad-progress,.ytp-ad-duration,.ytp-ad-feedback,
@@ -654,96 +714,15 @@ struct WebView: NSViewRepresentable {
         {display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}
         .ytp-ad-skip-slot{opacity:0!important;}
       `;
-
       const injectStyle=()=>{
         const s=document.createElement("style");
-        s.textContent=AD_SELECTORS;
+        s.textContent=adCSS;
         (document.head||document.documentElement).appendChild(s);
       };
       injectStyle();
       if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",injectStyle);
 
-      // ── 1. Strip ad data from ytInitialPlayerResponse (server-rendered JSON) ──
-      const stripAdsFromObject=(obj)=>{
-        if(!obj||typeof obj!=="object")return obj;
-        // Remove top-level ad arrays
-        delete obj.adPlacements;
-        delete obj.playerAds;
-        delete obj.adBreakHeartbeatParams;
-        if(obj.auxiliaryUi?.messageRenderers){
-          for(const key of Object.keys(obj.auxiliaryUi.messageRenderers)){
-            if(key.toLowerCase().includes("ad")) delete obj.auxiliaryUi.messageRenderers[key];
-          }
-        }
-        // Recurse into common nested containers
-        for(const key of ["responseContext","playbackTracking","videoDetails","playerConfig","storyboard"]){
-          if(obj[key]) stripAdsFromObject(obj[key]);
-        }
-        return obj;
-      };
-
-      if(window.ytInitialPlayerResponse){
-        window.ytInitialPlayerResponse=stripAdsFromObject(window.ytInitialPlayerResponse);
-      }
-      // Also patch the getter in case YouTube clones it later
-      let _ytInitial=null;
-      Object.defineProperty(window,"ytInitialPlayerResponse",{
-        get(){return _ytInitial;},
-        set(v){_ytInitial=stripAdsFromObject(v);},
-        configurable:true
-      });
-
-      // ── 2. Strip ad data from ytplayer.config.args ──
-      if(window.ytplayer?.config?.args){
-        window.ytplayer.config.args=stripAdsFromObject(window.ytplayer.config.args);
-      }
-
-      // ── 3. Intercept fetch() to strip ad data from /youtubei/v1/player responses ──
-      const _origFetch=window.fetch;
-      const isAdUrl=(url)=>{
-        const u=typeof url==="string"?url:url?.url||"";
-        return /youtubei\\/v1\\/(player|next|browse|search|guide|config)/.test(u);
-      };
-      window.fetch=async function(url,opts){
-        const resp=await _origFetch.apply(this,arguments);
-        if(!isAdUrl(url))return resp;
-        try{
-          const clone=resp.clone();
-          const text=await clone.text();
-          let json=JSON.parse(text);
-          json=stripAdsFromObject(json);
-          // Rebuild a Response with the cleaned body
-          const newBody=JSON.stringify(json);
-          return new Response(newBody,{
-            status:resp.status,
-            statusText:resp.statusText,
-            headers:resp.headers
-          });
-        }catch(e){return resp;}
-      };
-
-      // ── 4. Intercept XMLHttpRequest to block ad-related requests ──
-      const _origOpen=XMLHttpRequest.prototype.open;
-      XMLHttpRequest.prototype.open=function(method,url){
-        this._yomUrl=url;
-        return _origOpen.apply(this,arguments);
-      };
-      const _origSend=XMLHttpRequest.prototype.send;
-      XMLHttpRequest.prototype.send=function(body){
-        const u=this._yomUrl||"";
-        // Block known ad endpoints entirely
-        if(/googleadservices|googlesyndication|doubleclick|youtube\\.com\\/pagead|youtube\\.com\\/api\\/stats\\/ads|youtube\\.com\\/api\\/stats\\/qoe.*ad|get_video_info.*adformat|log_event/.test(u)){
-          Object.defineProperty(this,"readyState",{get:()=>4,configurable:true});
-          Object.defineProperty(this,"status",{get:()=>200,configurable:true});
-          Object.defineProperty(this,"responseText",{get:()=>"{}",configurable:true});
-          if(this.onreadystatechange){try{this.onreadystatechange();}catch(e){}}
-          this.dispatchEvent(new Event("load"));
-          return;
-        }
-        return _origSend.apply(this,arguments);
-      };
-
-      // ── 5. MutationObserver: nuke ad DOM nodes the instant they appear ──
+      // 6) Click skip + remove ad nodes + force-remove ad-showing class
       const clickSkip=()=>{
         for(const sel of [".ytp-ad-skip-button",".ytp-ad-skip-button-modern",".ytp-skip-ad-button","button.ytp-skip-ad-button",".ytp-ad-overlay-close-button","button[aria-label*='Skip']"]){
           const b=document.querySelector(sel);
@@ -756,7 +735,6 @@ struct WebView: NSViewRepresentable {
         clickSkip();
         const p=P();
         if(!p)return;
-        // Remove separate ad overlay containers
         for(const sel of [".video-ads",".ytp-preview-ad",".ytp-ad-module",".ytp-ad-player-overlay",".ytp-ad-overlay-container",".ytp-ad-skip-slot"]){
           const ac=p.querySelector(sel);
           if(ac){
@@ -766,10 +744,8 @@ struct WebView: NSViewRepresentable {
             ac.remove();
           }
         }
-        // Also remove any ad-showing class from the player so YouTube thinks the ad finished
         if(p.classList.contains("ad-showing")){
           p.classList.remove("ad-showing");
-          // Force resume main video
           const v=V();
           if(v&&v.paused){try{v.play();}catch(e){}}
         }
@@ -778,7 +754,7 @@ struct WebView: NSViewRepresentable {
       const obs=new MutationObserver(muts=>{
         for(const m of muts){
           if(m.type==="attributes"&&m.attributeName==="class"){
-            if(m.target.classList?.contains("ad-showing")){nukeDomAds();}
+            if(m.target.classList?.contains("ad-showing"))nukeDomAds();
           }
           for(const n of m.addedNodes){
             if(!(n instanceof HTMLElement))continue;
@@ -790,8 +766,8 @@ struct WebView: NSViewRepresentable {
       });
       obs.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:["class"]});
 
-      // Fast poll for any remaining DOM ads
       setInterval(nukeDomAds,50);
+      console.log("[YOM] ad blocker active");
     })();
     """
 }
