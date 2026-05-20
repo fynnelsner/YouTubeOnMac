@@ -1,3 +1,13 @@
+# Xcode
+build/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# DMG staging
+dmg-staging-*/
+dmg-layout-*/
+
+# macOS
 .DS_Store
-xcuserdata/
-*.xcuserdatad/
