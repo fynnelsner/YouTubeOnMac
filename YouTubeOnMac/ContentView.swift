@@ -536,11 +536,25 @@ struct WebView: NSViewRepresentable {
               {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/ads"}},
               {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/qoe.*ad"}},
               {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/get_video_info.*adformat"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/youtubei/v1/log_event"}}
+              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/youtubei/v1/log_event"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/youtubei/v1/log_interaction"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/youtubei/v1/reel/reel_item_watch"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/watchtime"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/atr"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/pla"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"googlevideo\\.com.*&oad"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"googlevideo\\.com/videoplayback.*oad"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/ptracking"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/pagead/conversion"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/pagead/1p-user-list"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"googletagservices\\.com"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"googletagmanager\\.com"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"google-analytics\\.com"}},
+              {"action":{"type":"block"},"trigger":{"url-filter":"firebase\\.google\\.com"}}
             ]
             """
             WKContentRuleListStore.default().compileContentRuleList(
-                forIdentifier: "yom-adblock",
+                forIdentifier: "yom-adblock-v2",
                 encodedContentRuleList: ruleJSON
             ) { list, _ in
                 if let list = list {
@@ -621,8 +635,10 @@ struct WebView: NSViewRepresentable {
       window.yomSetSpeed=s=>{const v=V();if(v){v.playbackRate=s;return}let c=0;const r=setInterval(()=>{const v2=V();if(v2){v2.playbackRate=s;clearInterval(r)}if(++c>10)clearInterval(r)},300)};
 
       // ── Ad Block ───────────────────────────────────
-      // CSS: hide ad DOM nodes but NEVER hide skip buttons (we need to click them)
-      const hideCSS=`
+      // Strategy: strip ad metadata from player API responses BEFORE YouTube's JS sees it.
+      // Also CSS-hide any ad DOM nodes that slip through, and remove them from the tree.
+
+      const AD_SELECTORS = `
         .video-ads,.ytp-ad-module,.ytp-ad-player-overlay,.ytp-ad-overlay-container,
         .ytp-ad-overlay-slot,.ytp-ad-image-overlay,.ytp-ad-text,.ytp-ad-preview-container,
         .ytp-ad-progress,.ytp-ad-duration,.ytp-ad-feedback,
@@ -634,50 +650,114 @@ struct WebView: NSViewRepresentable {
         ytd-compact-promoted-video-renderer,ytd-merch-shelf-renderer,
         ytd-player-legacy-desktop-watch-ads-renderer,
         .ytd-companion-slot-renderer,.ytd-player-ads,
-        ytd-shopping-panel-renderer
+        ytd-shopping-panel-renderer,.ytp-suggested-action-container
         {display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}
-        /* Keep skip button SLOT hidden but never the actual clickable skip button */
         .ytp-ad-skip-slot{opacity:0!important;}
       `;
 
       const injectStyle=()=>{
         const s=document.createElement("style");
-        s.textContent=hideCSS;
+        s.textContent=AD_SELECTORS;
         (document.head||document.documentElement).appendChild(s);
       };
       injectStyle();
       if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",injectStyle);
 
+      // ── 1. Strip ad data from ytInitialPlayerResponse (server-rendered JSON) ──
+      const stripAdsFromObject=(obj)=>{
+        if(!obj||typeof obj!=="object")return obj;
+        // Remove top-level ad arrays
+        delete obj.adPlacements;
+        delete obj.playerAds;
+        delete obj.adBreakHeartbeatParams;
+        if(obj.auxiliaryUi?.messageRenderers){
+          for(const key of Object.keys(obj.auxiliaryUi.messageRenderers)){
+            if(key.toLowerCase().includes("ad")) delete obj.auxiliaryUi.messageRenderers[key];
+          }
+        }
+        // Recurse into common nested containers
+        for(const key of ["responseContext","playbackTracking","videoDetails","playerConfig","storyboard"]){
+          if(obj[key]) stripAdsFromObject(obj[key]);
+        }
+        return obj;
+      };
+
+      if(window.ytInitialPlayerResponse){
+        window.ytInitialPlayerResponse=stripAdsFromObject(window.ytInitialPlayerResponse);
+      }
+      // Also patch the getter in case YouTube clones it later
+      let _ytInitial=null;
+      Object.defineProperty(window,"ytInitialPlayerResponse",{
+        get(){return _ytInitial;},
+        set(v){_ytInitial=stripAdsFromObject(v);},
+        configurable:true
+      });
+
+      // ── 2. Strip ad data from ytplayer.config.args ──
+      if(window.ytplayer?.config?.args){
+        window.ytplayer.config.args=stripAdsFromObject(window.ytplayer.config.args);
+      }
+
+      // ── 3. Intercept fetch() to strip ad data from /youtubei/v1/player responses ──
+      const _origFetch=window.fetch;
+      const isAdUrl=(url)=>{
+        const u=typeof url==="string"?url:url?.url||"";
+        return /youtubei\\/v1\\/(player|next|browse|search|guide|config)/.test(u);
+      };
+      window.fetch=async function(url,opts){
+        const resp=await _origFetch.apply(this,arguments);
+        if(!isAdUrl(url))return resp;
+        try{
+          const clone=resp.clone();
+          const text=await clone.text();
+          let json=JSON.parse(text);
+          json=stripAdsFromObject(json);
+          // Rebuild a Response with the cleaned body
+          const newBody=JSON.stringify(json);
+          return new Response(newBody,{
+            status:resp.status,
+            statusText:resp.statusText,
+            headers:resp.headers
+          });
+        }catch(e){return resp;}
+      };
+
+      // ── 4. Intercept XMLHttpRequest to block ad-related requests ──
+      const _origOpen=XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open=function(method,url){
+        this._yomUrl=url;
+        return _origOpen.apply(this,arguments);
+      };
+      const _origSend=XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.send=function(body){
+        const u=this._yomUrl||"";
+        // Block known ad endpoints entirely
+        if(/googleadservices|googlesyndication|doubleclick|youtube\\.com\\/pagead|youtube\\.com\\/api\\/stats\\/ads|youtube\\.com\\/api\\/stats\\/qoe.*ad|get_video_info.*adformat|log_event/.test(u)){
+          Object.defineProperty(this,"readyState",{get:()=>4,configurable:true});
+          Object.defineProperty(this,"status",{get:()=>200,configurable:true});
+          Object.defineProperty(this,"responseText",{get:()=>"{}",configurable:true});
+          if(this.onreadystatechange){try{this.onreadystatechange();}catch(e){}}
+          this.dispatchEvent(new Event("load"));
+          return;
+        }
+        return _origSend.apply(this,arguments);
+      };
+
+      // ── 5. MutationObserver: nuke ad DOM nodes the instant they appear ──
       const clickSkip=()=>{
         for(const sel of [".ytp-ad-skip-button",".ytp-ad-skip-button-modern",".ytp-skip-ad-button","button.ytp-skip-ad-button",".ytp-ad-overlay-close-button","button[aria-label*='Skip']"]){
           const b=document.querySelector(sel);
-          if(b){b.click();return true}
+          if(b){b.click();return true;}
         }
         return false;
       };
 
-      let _savedRate=1;
-      const fastForwardAd=()=>{
-        const v=V();
-        const p=P();
-        if(!v||!p)return;
-        if(p.classList.contains("ad-showing")&&v.playbackRate<8){
-          _savedRate=v.playbackRate>0?v.playbackRate:1;
-          v.playbackRate=16;
-          v.muted=true;
-        }
-        if(!p.classList.contains("ad-showing")&&v.playbackRate===16){
-          v.playbackRate=_savedRate||1;
-          v.muted=false;
-        }
-      };
-
-      const nuke=()=>{
+      const nukeDomAds=()=>{
         clickSkip();
         const p=P();
         if(!p)return;
-        // Remove separate ad video containers (banner/overlay ads, NOT main video)
-        for(const sel of [".video-ads",".ytp-preview-ad",".ytp-ad-module"]){
+        // Remove separate ad overlay containers
+        for(const sel of [".video-ads",".ytp-preview-ad",".ytp-ad-module",".ytp-ad-player-overlay",".ytp-ad-overlay-container",".ytp-ad-skip-slot"]){
           const ac=p.querySelector(sel);
           if(ac){
             ac.querySelectorAll("video").forEach(v=>{
@@ -686,27 +766,32 @@ struct WebView: NSViewRepresentable {
             ac.remove();
           }
         }
-        p.querySelectorAll(".ytp-ad-module,.ytp-ad-player-overlay,.ytp-ad-overlay-container,.ytp-ad-skip-slot,.ytp-preview-ad,.ytp-ad-text-overlay").forEach(e=>e.remove());
-        fastForwardAd();
+        // Also remove any ad-showing class from the player so YouTube thinks the ad finished
+        if(p.classList.contains("ad-showing")){
+          p.classList.remove("ad-showing");
+          // Force resume main video
+          const v=V();
+          if(v&&v.paused){try{v.play();}catch(e){}}
+        }
       };
 
       const obs=new MutationObserver(muts=>{
         for(const m of muts){
           if(m.type==="attributes"&&m.attributeName==="class"){
-            if(m.target.classList?.contains("ad-showing")){nuke();}
+            if(m.target.classList?.contains("ad-showing")){nukeDomAds();}
           }
           for(const n of m.addedNodes){
             if(!(n instanceof HTMLElement))continue;
-            if(n.matches?.(".video-ads,.ytp-ad-module,.ytp-ad-player-overlay,.ytp-preview-ad"))n.remove();
-            if(n.querySelector?.(".video-ads,.ytp-preview-ad"))nuke();
-            if(n.classList?.contains("html5-video-player")&&n.classList.contains("ad-showing"))nuke();
+            if(n.matches?.(".video-ads,.ytp-ad-module,.ytp-ad-player-overlay,.ytp-preview-ad,.ytp-suggested-action-container"))n.remove();
+            if(n.querySelector?.(".video-ads,.ytp-preview-ad"))nukeDomAds();
+            if(n.classList?.contains("html5-video-player")&&n.classList.contains("ad-showing"))nukeDomAds();
           }
         }
       });
       obs.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:["class"]});
 
-      // Ultra-fast poll: 50ms
-      setInterval(()=>{nuke();},50);
+      // Fast poll for any remaining DOM ads
+      setInterval(nukeDomAds,50);
     })();
     """
 }
