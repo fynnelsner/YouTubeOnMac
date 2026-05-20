@@ -831,10 +831,10 @@ struct WebView: NSViewRepresentable {
       const openExternal=(url)=>{
         if(!isExternal(url))return false;
         console.log("[YOM] external:",url);
-        // Primary: window.open triggers WKUIDelegate.createWebViewWith → opens in default browser
-        try{window.open(url,"_blank");return true;}catch(e){}
-        // Fallback: webkit message handler
+        // Primary: webkit message handler (bypasses WebKit security dialog)
         try{webkit.messageHandlers.yomLink.postMessage(url);return true;}catch(e){}
+        // Fallback: window.open triggers WKUIDelegate.createWebViewWith
+        try{window.open(url,"_blank");return true;}catch(e){}
         return false;
       };
 
