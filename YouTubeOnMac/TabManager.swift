@@ -162,6 +162,10 @@ final class TabManager: ObservableObject {
             config.preferences.isElementFullscreenEnabled = false
         }
 
+        let prefs = WKWebpagePreferences()
+        prefs.allowsContentJavaScript = true
+        config.defaultWebpagePreferences = prefs
+
         let userController = WKUserContentController()
 
         // Playback-speed helper
@@ -178,49 +182,155 @@ final class TabManager: ObservableObject {
         )
         userController.addUserScript(speedScript)
 
-        // Inline-fullscreen bridge: YouTube tries to use requestFullscreen().
-        // We override it to report fullscreen state via message handler while keeping
-        // the video inside the window (no macOS Space/fullscreen workspace).
+        // Inline-fullscreen bridge: YouTube's player buttons call requestFullscreen().
+        // We inject CSS to make the player fill the window and intercept fullscreen API
+        // calls and button clicks, all while staying in the same desktop Space.
         let fullscreenScript = WKUserScript(
             source: """
             (function() {
-                function yomNotify(entering) {
-                    window.webkit.messageHandlers.yomFullscreen.postMessage(entering ? 'enter' : 'exit');
-                }
-                function patchFullscreen() {
-                    var elProto = Element.prototype;
-                    var docProto = Document.prototype;
+                if (!window.location.hostname.includes("youtube.com")) return;
+                if (window.__yom) return;
+                window.__yom = true;
 
-                    elProto.requestFullscreen = function() {
-                        yomNotify(true);
-                        return Promise.resolve();
-                    };
-                    if (elProto.webkitRequestFullscreen) {
-                        elProto.webkitRequestFullscreen = function() { yomNotify(true); };
-                    }
+                const P = () => document.querySelector(".html5-video-player");
+                const V = () => { const p = P(); return p ? p.querySelector("video") : document.querySelector("video"); };
 
-                    document.exitFullscreen = function() {
-                        yomNotify(false);
-                        return Promise.resolve();
-                    };
-                    if (docProto.webkitExitFullscreen) {
-                        docProto.webkitExitFullscreen = function() { yomNotify(false); };
+                let fs = false;
+                const cls = "yom-fs";
+                const initStyle = () => {
+                    if (document.getElementById(cls)) return;
+                    const s = document.createElement("style");
+                    s.id = cls;
+                    s.textContent = `html.${cls},body.${cls}{overflow:hidden!important}html.${cls} ytd-masthead,html.${cls} #secondary,html.${cls} #chat,html.${cls} #below,html.${cls} #comments{display:none!important}html.${cls} ytd-watch-flexy #primary{margin:0!important;width:100%!important;max-width:100%!important}.html5-video-player.${cls}-p{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important;display:flex!important;align-items:center!important;justify-content:center!important}.html5-video-player.${cls}-p .html5-video-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;display:flex!important;align-items:center!important;justify-content:center!important;transform:none!important;margin:0!important;padding:0!important;border:none!important}.html5-video-player.${cls}-p video{width:100%!important;height:100%!important;object-fit:contain!important;object-position:center!important;margin:0!important;padding:0!important}`;
+                    document.head.appendChild(s);
+                };
+                const enterFs = () => {
+                    initStyle();
+                    const p = P();
+                    if (!p) return;
+                    fs = true;
+                    document.documentElement.classList.add(cls);
+                    document.body.classList.add(cls);
+                    p.classList.add(cls + "-p", "ytp-fullscreen");
+                    try { window.webkit.messageHandlers.yomFullscreen.postMessage("enter"); } catch {}
+                };
+                const exitFs = () => {
+                    fs = false;
+                    document.documentElement.classList.remove(cls);
+                    document.body.classList.remove(cls);
+                    const p = P();
+                    if (p) { p.classList.remove(cls + "-p", "ytp-fullscreen"); }
+                    try { window.webkit.messageHandlers.yomFullscreen.postMessage("exit"); } catch {}
+                };
+                const toggleFs = () => { fs ? exitFs() : enterFs(); };
+                window.yomFs = toggleFs;
+
+                const patch = (o, n, r) => {
+                    if (o && typeof o[n] === "function" && !o["_" + n]) {
+                        o["_" + n] = o[n];
+                        o[n] = r(o[n]);
                     }
-                }
-                patchFullscreen();
-                document.addEventListener('fullscreenchange', function() {
-                    yomNotify(!!(document.fullscreenElement || document.webkitFullscreenElement));
-                });
-                document.addEventListener('webkitfullscreenchange', function() {
-                    yomNotify(!!(document.webkitFullscreenElement));
-                });
+                };
+                patch(Element.prototype, "requestFullscreen", orig => function() { enterFs(); return Promise.resolve(); });
+                patch(Element.prototype, "webkitRequestFullscreen", orig => function() { enterFs(); });
+                patch(Document.prototype, "exitFullscreen", orig => function() { exitFs(); return Promise.resolve(); });
+                patch(Document.prototype, "webkitExitFullscreen", orig => function() { exitFs(); });
+                patch(HTMLVideoElement.prototype, "webkitEnterFullscreen", orig => function() { enterFs(); });
+
+                document.addEventListener("fullscreenchange", () => {
+                    if (document.fullscreenElement) { enterFs(); try { document.exitFullscreen(); } catch {} }
+                }, true);
+                document.addEventListener("webkitfullscreenchange", () => {
+                    if (document.fullscreenElement) { enterFs(); try { document.webkitExitFullscreen(); } catch {} }
+                }, true);
+
+                document.addEventListener("keydown", e => {
+                    if (e.metaKey || e.ctrlKey || e.altKey) return;
+                    const t = document.activeElement?.tagName;
+                    if (t === "INPUT" || t === "TEXTAREA" || document.activeElement?.getAttribute("contenteditable") === "true") return;
+                    if (e.key.toLowerCase() === "f") { e.preventDefault(); e.stopPropagation(); toggleFs(); }
+                    else if (e.key === "Escape" && fs) { e.preventDefault(); e.stopPropagation(); exitFs(); }
+                }, true);
+
+                document.addEventListener("click", e => {
+                    const btn = e.target?.closest(".ytp-fullscreen-button");
+                    if (btn) { e.preventDefault(); e.stopPropagation(); toggleFs(); }
+                }, true);
+
+                // Playback speed helper
+                window.yomSetSpeed = s => {
+                    const v = V();
+                    if (v) { v.playbackRate = s; return; }
+                    let c = 0;
+                    const r = setInterval(() => { const v2 = V(); if (v2) { v2.playbackRate = s; clearInterval(r); } if (++c > 10) clearInterval(r); }, 300);
+                };
+
+                // External-link handler
+                const unwrapRedirect = url => {
+                    if (typeof url !== "string") return url;
+                    if (url.includes("youtube.com/redirect") || url.includes("youtube.com/shorts/redirect")) {
+                        try { const u = new URL(url); const t = u.searchParams.get("q") || u.searchParams.get("url"); if (t) return t; } catch {}
+                    }
+                    return url;
+                };
+                const isExternal = url => {
+                    if (!url || typeof url !== "string") return false;
+                    try {
+                        const u = new URL(url, window.location.href);
+                        const h = u.hostname.toLowerCase();
+                        return (u.protocol === "http:" || u.protocol === "https:") && !(h.endsWith("youtube.com") || h.endsWith("youtube-nocookie.com") || h.endsWith("google.com") || h.endsWith("googlevideo.com"));
+                    } catch { return false; }
+                };
+                const openExternal = url => {
+                    if (!isExternal(url)) return false;
+                    if (window.webkit?.messageHandlers?.yomLink) { window.webkit.messageHandlers.yomLink.postMessage(url); return true; }
+                    return false;
+                };
+                const patchAnchor = a => {
+                    if (a.dataset?.yomPatched) return;
+                    a.dataset.yomPatched = "1";
+                    const handler = e => {
+                        const raw = a.getAttribute("href") || a.getAttribute("data-target") || a.getAttribute("data-url") || a.getAttribute("data-href") || "";
+                        const url = unwrapRedirect(a.href || raw);
+                        if (!url || url.startsWith("#") || url.startsWith("javascript:") || url === "about:blank") return;
+                        if (isExternal(url)) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); openExternal(url); }
+                    };
+                    a.addEventListener("click", handler, true);
+                    a.addEventListener("auxclick", handler, true);
+                };
+                const patchAllAnchors = () => {
+                    document.querySelectorAll('a[href]:not([data-yom-patched]),a[data-target]:not([data-yom-patched]),a[data-url]:not([data-yom-patched])').forEach(patchAnchor);
+                };
+                const linkObs = new MutationObserver(() => patchAllAnchors());
+                linkObs.observe(document.documentElement, { childList: true, subtree: true });
+                patchAllAnchors();
+
+                const _origOpen = window.open;
+                window.open = function(url, target, features) {
+                    const real = unwrapRedirect(url);
+                    if (isExternal(real)) { openExternal(real); return null; }
+                    return _origOpen.call(this, url, target, features);
+                };
+                const _origAssign = window.location.assign;
+                window.location.assign = function(url) {
+                    const real = unwrapRedirect(url);
+                    if (isExternal(real)) { openExternal(real); return; }
+                    return _origAssign.call(this, url);
+                };
+                const _origReplace = window.location.replace;
+                window.location.replace = function(url) {
+                    const real = unwrapRedirect(url);
+                    if (isExternal(real)) { openExternal(real); return; }
+                    return _origReplace.call(this, url);
+                };
             })();
             """,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: false
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
         )
         userController.addUserScript(fullscreenScript)
         userController.add(WebMessageHandler(), name: "yomFullscreen")
+        userController.add(WebMessageHandler(), name: "yomLink")
 
         config.userContentController = userController
 
@@ -362,10 +472,18 @@ private func extractRedirectURL(from url: URL) -> URL? {
 @MainActor
 private final class WebMessageHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let manager = message.webView.flatMap({ webView in
-            (objc_getAssociatedObject(webView, "coordinator") as? WebCoordinator)?.manager
-        }) else { return }
-        let entering = (message.body as? String) == "enter"
-        manager.setFullscreen(id: (objc_getAssociatedObject(message.webView!, "coordinator") as? WebCoordinator)?.tabID ?? UUID(), fullscreen: entering)
+        guard let coordinator = message.webView.flatMap({ objc_getAssociatedObject($0, "coordinator") as? WebCoordinator }),
+              let manager = coordinator.manager else { return }
+
+        switch message.name {
+        case "yomFullscreen":
+            let entering = (message.body as? String) == "enter"
+            manager.setFullscreen(id: coordinator.tabID, fullscreen: entering)
+        case "yomLink":
+            guard let urlString = message.body as? String, let url = URL(string: urlString) else { return }
+            NSWorkspace.shared.open(url)
+        default:
+            break
+        }
     }
 }
