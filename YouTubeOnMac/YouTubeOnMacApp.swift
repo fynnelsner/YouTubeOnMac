@@ -9,115 +9,26 @@
 import SwiftUI
 import AppKit
 
+@MainActor
 @main
-struct YouTubeOnMacApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-
-    var body: some Scene {
-        WindowGroup {
-            PlaceholderRootView()
-        }
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("New Window") {
-                    NotificationCenter.default.post(name: .newWindow, object: nil)
-                }
-                .keyboardShortcut(KeyEquivalent("n"), modifiers: .command)
-
-                Button("New Tab") {
-                    NotificationCenter.default.post(name: .newTab, object: nil)
-                }
-                .keyboardShortcut(KeyEquivalent("t"), modifiers: .command)
-
-                Button("Close Tab") {
-                    NotificationCenter.default.post(name: .closeTab, object: nil)
-                }
-                .keyboardShortcut(KeyEquivalent("w"), modifiers: .command)
-            }
-
-            CommandMenu("Tabs") {
-                Button("Select Next Tab") {
-                    NotificationCenter.default.post(name: .nextTab, object: nil)
-                }
-                .keyboardShortcut(KeyEquivalent("t"), modifiers: [.control, .shift])
-
-                Button("Select Previous Tab") {
-                    NotificationCenter.default.post(name: .previousTab, object: nil)
-                }
-                .keyboardShortcut(KeyEquivalent("t"), modifiers: [.control])
-
-                ForEach(1..<10, id: \.self) { n in
-                    Button("Select Tab \(n)") {
-                        NotificationCenter.default.post(name: .selectTab, object: n - 1)
-                    }
-                    .keyboardShortcut(KeyEquivalent(Character(String(n))), modifiers: .command)
-                }
-            }
-
-            CommandGroup(after: .windowArrangement) {
-                Button("Toggle Full Screen") {
-                    NSApp.keyWindow?.toggleFullScreen(nil)
-                }
-                .keyboardShortcut(KeyEquivalent("f"), modifiers: [.control, .command])
-            }
-        }
-    }
-}
-
-struct PlaceholderRootView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { NSView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class YouTubeOnMacApp: NSObject, NSApplicationDelegate {
     private var keyMonitor: Any?
     private let windowManager = WindowManager.shared
 
+    static func main() {
+        let app = NSApplication.shared
+        app.delegate = YouTubeOnMacApp()
+        app.run()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Close SwiftUI's default empty WindowGroup window and create our own.
-        NSApp.windows.forEach { window in
-            if window.contentViewController is NSHostingController<PlaceholderRootView> {
-                window.close()
-            }
-        }
+        buildMainMenu()
         windowManager.createWindow()
 
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard let chars = event.charactersIgnoringModifiers?.lowercased() else { return event }
-            let ctrl = event.modifierFlags.contains(.control)
-            let cmd = event.modifierFlags.contains(.command)
-            let shift = event.modifierFlags.contains(.shift)
-
-            if cmd && chars == "t" {
-                self.windowManager.keyWindowManager()?.addTab()
-                return nil
-            }
-            if cmd && chars == "w" && !shift {
-                self.windowManager.keyWindowManager()?.closeSelectedTab()
-                return nil
-            }
-            if cmd && chars == "n" {
-                self.windowManager.createWindow()
-                return nil
-            }
-            if ctrl && chars == "\t" {
-                if shift {
-                    self.windowManager.keyWindowManager()?.selectPreviousTab()
-                } else {
-                    self.windowManager.keyWindowManager()?.selectNextTab()
-                }
-                return nil
-            }
-            if cmd && "123456789".contains(chars) {
-                if let n = Int(chars) {
-                    self.windowManager.keyWindowManager()?.selectTab(at: n - 1)
-                }
-                return nil
-            }
-            return event
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKey(event) ?? event
         }
 
-        // Subscribe to menu-triggered notifications so each window's manager reacts.
         NotificationCenter.default.addObserver(self, selector: #selector(newWindow), name: .newWindow, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(newTab), name: .newTab, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(closeTab), name: .closeTab, object: nil)
@@ -139,15 +50,105 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    // MARK: - Keyboard routing
+
+    private func handleKey(_ event: NSEvent) -> NSEvent? {
+        guard let chars = event.charactersIgnoringModifiers?.lowercased() else { return event }
+        let ctrl = event.modifierFlags.contains(.control)
+        let cmd = event.modifierFlags.contains(.command)
+        let shift = event.modifierFlags.contains(.shift)
+
+        if cmd && chars == "t" {
+            windowManager.keyWindowManager()?.addTab()
+            return nil
+        }
+        if cmd && chars == "w" && !shift {
+            windowManager.keyWindowManager()?.closeSelectedTab()
+            return nil
+        }
+        if cmd && chars == "n" {
+            windowManager.createWindow()
+            return nil
+        }
+        if ctrl && chars == "\t" {
+            if shift {
+                windowManager.keyWindowManager()?.selectPreviousTab()
+            } else {
+                windowManager.keyWindowManager()?.selectNextTab()
+            }
+            return nil
+        }
+        if cmd && "123456789".contains(chars) {
+            if let n = Int(chars) {
+                windowManager.keyWindowManager()?.selectTab(at: n - 1)
+            }
+            return nil
+        }
+        return event
+    }
+
+    // MARK: - Menu
+
+    private func buildMainMenu() {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        appMenuItem.submenu = NSMenu(title: "YouTubeOnMac")
+        appMenuItem.submenu?.addItem(withTitle: "About YouTubeOnMac", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenuItem.submenu?.addItem(NSMenuItem.separator())
+        appMenuItem.submenu?.addItem(withTitle: "Quit YouTubeOnMac", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        mainMenu.addItem(appMenuItem)
+
+        let fileMenu = NSMenuItem()
+        fileMenu.submenu = NSMenu(title: "File")
+        fileMenu.submenu?.addItem(withTitle: "New Window", action: #selector(newWindow), keyEquivalent: "n")
+        fileMenu.submenu?.addItem(withTitle: "New Tab", action: #selector(newTab), keyEquivalent: "t")
+        fileMenu.submenu?.addItem(withTitle: "Close Tab", action: #selector(closeTab), keyEquivalent: "w")
+        mainMenu.addItem(fileMenu)
+
+        let tabsMenu = NSMenuItem()
+        tabsMenu.submenu = NSMenu(title: "Tabs")
+        tabsMenu.submenu?.addItem(withTitle: "Select Next Tab", action: #selector(nextTab), keyEquivalent: "\t")
+        tabsMenu.submenu?.items.last?.keyEquivalentModifierMask = [.control]
+        tabsMenu.submenu?.addItem(withTitle: "Select Previous Tab", action: #selector(previousTab), keyEquivalent: "\t")
+        tabsMenu.submenu?.items.last?.keyEquivalentModifierMask = [.control, .shift]
+        for n in 1...9 {
+            let item = NSMenuItem(title: "Select Tab \(n)", action: #selector(selectTab(_:)), keyEquivalent: "\(n)")
+            item.keyEquivalentModifierMask = .command
+            item.representedObject = n - 1
+            tabsMenu.submenu?.addItem(item)
+        }
+        mainMenu.addItem(tabsMenu)
+
+        let viewMenu = NSMenuItem()
+        viewMenu.submenu = NSMenu(title: "View")
+        viewMenu.submenu?.addItem(withTitle: "Toggle Full Screen", action: #selector(toggleFullScreen), keyEquivalent: "f")
+        viewMenu.submenu?.items.last?.keyEquivalentModifierMask = [.control, .command]
+        mainMenu.addItem(viewMenu)
+
+        let windowMenu = NSMenuItem()
+        windowMenu.submenu = NSMenu(title: "Window")
+        windowMenu.submenu?.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.submenu?.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "W")
+        mainMenu.addItem(windowMenu)
+
+        NSApplication.shared.mainMenu = mainMenu
+    }
+
+    // MARK: - Actions
+
     @objc private func newWindow() { windowManager.createWindow() }
     @objc private func newTab() { windowManager.keyWindowManager()?.addTab() }
     @objc private func closeTab() { windowManager.keyWindowManager()?.closeSelectedTab() }
     @objc private func nextTab() { windowManager.keyWindowManager()?.selectNextTab() }
     @objc private func previousTab() { windowManager.keyWindowManager()?.selectPreviousTab() }
-    @objc private func selectTab(_ notification: Notification) {
-        if let n = notification.object as? Int {
+    @objc private func selectTab(_ sender: NSMenuItem) {
+        if let n = sender.representedObject as? Int {
             windowManager.keyWindowManager()?.selectTab(at: n)
         }
+    }
+    @objc private func toggleFullScreen() {
+        NSApp.keyWindow?.toggleFullScreen(nil)
     }
 }
 
