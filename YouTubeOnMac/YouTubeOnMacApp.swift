@@ -122,7 +122,7 @@ final class YouTubeOnMacApp: NSObject, NSApplicationDelegate {
 
         let viewMenu = NSMenuItem()
         viewMenu.submenu = NSMenu(title: "View")
-        viewMenu.submenu?.addItem(withTitle: "Toggle Full Screen", action: #selector(toggleFullScreen), keyEquivalent: "f")
+        viewMenu.submenu?.addItem(withTitle: "Toggle Inline Full Screen", action: #selector(toggleInlineFullscreen), keyEquivalent: "f")
         viewMenu.submenu?.items.last?.keyEquivalentModifierMask = [.control, .command]
         mainMenu.addItem(viewMenu)
 
@@ -147,8 +147,10 @@ final class YouTubeOnMacApp: NSObject, NSApplicationDelegate {
             windowManager.keyWindowManager()?.selectTab(at: n)
         }
     }
-    @objc private func toggleFullScreen() {
-        NSApp.keyWindow?.toggleFullScreen(nil)
+    @objc private func toggleInlineFullscreen() {
+        guard let manager = windowManager.keyWindowManager(), let tab = manager.selectedTab else { return }
+        manager.setFullscreen(id: tab.id, fullscreen: !tab.isFullscreen)
+        NotificationCenter.default.post(name: .toggleInlineFullscreen, object: nil)
     }
 }
 
@@ -166,4 +168,5 @@ extension Notification.Name {
     static let nextTab = Notification.Name("yom.nextTab")
     static let previousTab = Notification.Name("yom.previousTab")
     static let selectTab = Notification.Name("yom.selectTab")
+    static let toggleInlineFullscreen = Notification.Name("yom.toggleInlineFullscreen")
 }

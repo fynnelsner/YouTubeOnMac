@@ -157,8 +157,9 @@ final class TabManager: ObservableObject {
         config.processPool = sharedProcessPool
         config.websiteDataStore = sharedDataStore
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        // Do NOT use element fullscreen: we want inline window-fullscreen, not macOS Space fullscreen.
         if #available(macOS 12.3, *) {
-            config.preferences.isElementFullscreenEnabled = true
+            config.preferences.isElementFullscreenEnabled = false
         }
 
         let userController = WKUserContentController()
@@ -177,15 +178,43 @@ final class TabManager: ObservableObject {
         )
         userController.addUserScript(speedScript)
 
-        // Inline-fullscreen bridge
+        // Inline-fullscreen bridge: YouTube tries to use requestFullscreen().
+        // We override it to report fullscreen state via message handler while keeping
+        // the video inside the window (no macOS Space/fullscreen workspace).
         let fullscreenScript = WKUserScript(
             source: """
-            function yomNotifyFullscreen() {
-                var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-                window.webkit.messageHandlers.yomFullscreen.postMessage(isFs ? 'enter' : 'exit');
-            }
-            document.addEventListener('fullscreenchange', yomNotifyFullscreen);
-            document.addEventListener('webkitfullscreenchange', yomNotifyFullscreen);
+            (function() {
+                function yomNotify(entering) {
+                    window.webkit.messageHandlers.yomFullscreen.postMessage(entering ? 'enter' : 'exit');
+                }
+                function patchFullscreen() {
+                    var elProto = Element.prototype;
+                    var docProto = Document.prototype;
+
+                    elProto.requestFullscreen = function() {
+                        yomNotify(true);
+                        return Promise.resolve();
+                    };
+                    if (elProto.webkitRequestFullscreen) {
+                        elProto.webkitRequestFullscreen = function() { yomNotify(true); };
+                    }
+
+                    document.exitFullscreen = function() {
+                        yomNotify(false);
+                        return Promise.resolve();
+                    };
+                    if (docProto.webkitExitFullscreen) {
+                        docProto.webkitExitFullscreen = function() { yomNotify(false); };
+                    }
+                }
+                patchFullscreen();
+                document.addEventListener('fullscreenchange', function() {
+                    yomNotify(!!(document.fullscreenElement || document.webkitFullscreenElement));
+                });
+                document.addEventListener('webkitfullscreenchange', function() {
+                    yomNotify(!!(document.webkitFullscreenElement));
+                });
+            })();
             """,
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: false

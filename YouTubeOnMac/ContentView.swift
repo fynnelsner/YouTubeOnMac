@@ -62,8 +62,10 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TabBarView(manager: tabManager)
-                .frame(height: 34)
+            if let tab = tabManager.selectedTab, !tab.isFullscreen {
+                TabBarView(manager: tabManager)
+                    .frame(height: 34)
+            }
 
             ZStack {
                 ForEach(tabManager.tabs) { tab in
@@ -77,12 +79,14 @@ struct ContentView: View {
                     LoadingPlaceholder()
                 }
 
-                AppKitToolbarSetup(
-                    manager: tabManager,
-                    sleepTimer: sleepTimer,
-                    showCustomTimer: $showCustomTimer
-                )
-                .allowsHitTesting(false)
+                if let tab = tabManager.selectedTab, !tab.isFullscreen {
+                    AppKitToolbarSetup(
+                        manager: tabManager,
+                        sleepTimer: sleepTimer,
+                        showCustomTimer: $showCustomTimer
+                    )
+                    .allowsHitTesting(false)
+                }
             }
         }
         .sheet(isPresented: $showCustomTimer) {
@@ -95,6 +99,9 @@ struct ContentView: View {
         )
         .onAppear {
             tabManager.ensureInitialTab()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleInlineFullscreen)) { _ in
+            // Force UI refresh when menu/keyboard toggles inline fullscreen.
         }
     }
 
