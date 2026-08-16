@@ -41,8 +41,6 @@ final class WindowManager: ObservableObject {
         window.center()
         window.minSize = NSSize(width: 800, height: 500)
         window.isReleasedWhenClosed = false
-        // Prevent the green traffic-light button from throwing the window into a new Space.
-        window.collectionBehavior = [.fullScreenNone]
 
         // Use contentView + addSubview so the NSHostingController view is forced
         // to fill the window and cannot collapse to SwiftUI intrinsic size.

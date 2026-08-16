@@ -31,7 +31,7 @@ The same app runs natively on Apple Silicon (`arm64`) and Intel (`x86_64`) Macs 
 
 ## Installation
 
-1. Download `YouTubeOnMac-v3.2.7.dmg` from [Releases](https://github.com/fynnelsner/YouTubeOnMac/releases).
+1. Download `YouTubeOnMac-v3.2.8.dmg` from [Releases](https://github.com/fynnelsner/YouTubeOnMac/releases).
 2. Open the DMG and drag **YouTubeOnMac** into your **Applications** folder.
 3. Launch the app from Applications.
 
