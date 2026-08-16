@@ -26,7 +26,7 @@ struct TabBarView: View {
                     .onDrag {
                         NSItemProvider(object: tab.id.uuidString as NSString)
                     }
-                    .onDrop(of: ["public.text"], delegate: TabDropDelegate(manager: manager, tabID: tab.id))
+                    .onDrop(of: ["public.plain-text"], delegate: TabDropDelegate(manager: manager, tabID: tab.id))
                 }
 
                 Button(action: { manager.addTab() }) {
@@ -124,8 +124,8 @@ private struct TabDropDelegate: DropDelegate {
     let tabID: UUID
 
     func performDrop(info: DropInfo) -> Bool {
-        guard let item = info.itemProviders(for: ["public.text"]).first else { return false }
-        item.loadItem(forTypeIdentifier: "public.text", options: nil) { data, _ in
+        guard let item = info.itemProviders(for: ["public.plain-text"]).first else { return false }
+        item.loadItem(forTypeIdentifier: "public.plain-text", options: nil) { data, _ in
             guard let data = data as? Data,
                   let draggedID = String(data: data, encoding: .utf8),
                   let sourceID = UUID(uuidString: draggedID),

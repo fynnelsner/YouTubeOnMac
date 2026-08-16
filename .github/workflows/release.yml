@@ -47,7 +47,7 @@ jobs:
 
       - name: Create DMG
         run: |
-          DMG="YouTubeOnMac-${{ github.ref_name || github.sha }}.dmg"
+          DMG="YouTubeOnMac-v${GITHUB_REF_NAME#v}.dmg"
           hdiutil create -volname "YouTubeOnMac" -srcfolder "$DMG_STAGE" \
             -ov -format UDZO -o "$DMG"
           echo "DMG_PATH=$DMG" >> "$GITHUB_ENV"

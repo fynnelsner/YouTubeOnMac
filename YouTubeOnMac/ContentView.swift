@@ -84,10 +84,11 @@ struct ContentView: View {
         .sheet(isPresented: $showCustomTimer) {
             customTimerSheet
         }
-        .background(Color(colorScheme == .dark
-            ? CGColor(red: 0.097, green: 0.097, blue: 0.097, alpha: 1)
-            : CGColor(red: 1, green: 1, blue: 1, alpha: 1)
-        ))
+        .background(
+            colorScheme == .dark
+                ? Color(red: 0.097, green: 0.097, blue: 0.097)
+                : Color.white
+        )
     }
 
     private var customTimerSheet: some View {
@@ -180,10 +181,11 @@ struct ContentView: View {
             .padding(.horizontal, 20)
         }
         .frame(width: 360)
-        .background(Color(colorScheme == .dark
-            ? CGColor(red: 0.14, green: 0.14, blue: 0.14, alpha: 1)
-            : CGColor(red: 0.97, green: 0.97, blue: 0.97, alpha: 1)
-        ))
+        .background(
+            colorScheme == .dark
+                ? Color(red: 0.14, green: 0.14, blue: 0.14)
+                : Color(red: 0.97, green: 0.97, blue: 0.97)
+        )
     }
 
     private func parseDuration(_ input: String) -> TimeInterval? {

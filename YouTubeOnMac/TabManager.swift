@@ -144,7 +144,9 @@ final class TabManager: ObservableObject {
     private static func createWebView() -> WKWebView {
         let config = WKWebViewConfiguration()
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
-        config.preferences.isElementFullscreenEnabled = true
+        if #available(macOS 12.3, *) {
+            config.preferences.isElementFullscreenEnabled = true
+        }
 
         let userController = WKUserContentController()
 

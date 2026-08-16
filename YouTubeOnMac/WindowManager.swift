@@ -41,13 +41,6 @@ final class WindowManager: ObservableObject {
         let controller = WindowController(window: window, manager: manager)
         windows.append(controller)
 
-        NotificationCenter.default.addObserver(
-            controller,
-            selector: #selector(WindowController.windowWillClose(_:)),
-            name: NSWindow.willCloseNotification,
-            object: window
-        )
-
         if makeKey {
             window.makeKeyAndOrderFront(nil)
         }
@@ -76,23 +69,22 @@ final class WindowManager: ObservableObject {
 final class WindowController: NSObject {
     let window: NSWindow
     let manager: TabManager
-    private var observer: NSKeyValueObservation?
 
     init(window: NSWindow, manager: TabManager) {
         self.window = window
         self.manager = manager
         super.init()
 
-        observer = window.observe(\.isKeyWindow, options: .new) { [weak self] _, _ in
-            if let self = self, self.window.isKeyWindow {
-                // Ensure the window's manager is reachable for global keyboard shortcuts.
-                _ = WindowManager.shared.keyWindowManager()
-            }
-        }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
     }
 
     @objc func windowWillClose(_ notification: Notification) {
-        observer?.invalidate()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: window)
         WindowManager.shared.remove(controller: self)
     }
 }

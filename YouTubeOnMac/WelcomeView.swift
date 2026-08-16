@@ -28,13 +28,12 @@ struct WelcomeView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-
             VStack(spacing: 0) {
                 Spacer().frame(height: 52)
 
                 ZStack {
                     RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .fill(.black.opacity(0.35))
+                        .fill(Color.black.opacity(0.35))
                         .frame(width: 112, height: 112)
                         .shadow(color: Color.red.opacity(0.25), radius: 24, x: 0, y: 12)
 

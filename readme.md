@@ -13,6 +13,10 @@ The same app runs natively on Apple Silicon (`arm64`) and Intel (`x86_64`) Macs 
 ## Features
 
 - **Native Mac app** with a clean toolbar and inline fullscreen
+- **Real tabs** — open multiple YouTube pages in one window
+  - `⌘T` new tab · `⌘W` close tab · `⌘1-9` jump to tab · `^⇥` / `^⇧⇥` cycle tabs
+  - click, drag-to-reorder, close, and pin tabs in the tab bar
+- **Multiple windows** — `⌘N` opens a separate YouTubeOnMac window with its own tabs
 - **Universal binary** — Apple Silicon and Intel from one download
 - **External links open in your default browser** automatically
 - **Sleep timer** with quick presets or a custom duration
@@ -27,7 +31,7 @@ The same app runs natively on Apple Silicon (`arm64`) and Intel (`x86_64`) Macs 
 
 ## Installation
 
-1. Download `YouTubeOnMac.dmg` from [Releases](https://github.com/fynnelsner/YouTubeOnMac/releases).
+1. Download `YouTubeOnMac-v3.2.0.dmg` from [Releases](https://github.com/fynnelsner/YouTubeOnMac/releases).
 2. Open the DMG and drag **YouTubeOnMac** into your **Applications** folder.
 3. Launch the app from Applications.
 
@@ -75,6 +79,12 @@ hdiutil create -volname "YouTubeOnMac" -srcfolder /tmp/YouTubeOnMac \
 
 | Shortcut | Action |
 |----------|--------|
+| `⌘N` | New window |
+| `⌘T` | New tab |
+| `⌘W` | Close tab |
+| `^⇥` | Next tab |
+| `^⇧⇥` | Previous tab |
+| `⌘1` … `⌘9` | Jump to tab 1–9 |
 | `⌃⌘F` | Toggle inline fullscreen |
 | `F` | Toggle inline fullscreen (when video player is focused) |
 | `Esc` | Exit inline fullscreen |

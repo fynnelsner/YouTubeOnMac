@@ -15,46 +15,42 @@ struct YouTubeOnMacApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(WindowManager.shared)
+            PlaceholderRootView()
         }
-        .windowStyle(HiddenTitleBarWindowStyle())
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Window") {
-                    WindowManager.shared.createWindow()
+                    NotificationCenter.default.post(name: .newWindow, object: nil)
                 }
-                .keyboardShortcut("n", modifiers: .command)
+                .keyboardShortcut(KeyEquivalent("n"), modifiers: .command)
 
                 Button("New Tab") {
-                    WindowManager.shared.keyWindowManager()?.addTab()
+                    NotificationCenter.default.post(name: .newTab, object: nil)
                 }
-                .keyboardShortcut("t", modifiers: .command)
+                .keyboardShortcut(KeyEquivalent("t"), modifiers: .command)
 
                 Button("Close Tab") {
-                    if let id = WindowManager.shared.keyWindowManager()?.selectedTabID {
-                        WindowManager.shared.keyWindowManager()?.closeTab(id: id)
-                    }
+                    NotificationCenter.default.post(name: .closeTab, object: nil)
                 }
-                .keyboardShortcut("w", modifiers: .command)
+                .keyboardShortcut(KeyEquivalent("w"), modifiers: .command)
             }
 
             CommandMenu("Tabs") {
                 Button("Select Next Tab") {
-                    WindowManager.shared.keyWindowManager()?.selectNextTab()
+                    NotificationCenter.default.post(name: .nextTab, object: nil)
                 }
-                .keyboardShortcut("t", modifiers: [.control, .shift])
+                .keyboardShortcut(KeyEquivalent("t"), modifiers: [.control, .shift])
 
                 Button("Select Previous Tab") {
-                    WindowManager.shared.keyWindowManager()?.selectPreviousTab()
+                    NotificationCenter.default.post(name: .previousTab, object: nil)
                 }
-                .keyboardShortcut("t", modifiers: [.control])
+                .keyboardShortcut(KeyEquivalent("t"), modifiers: [.control])
 
                 ForEach(1..<10, id: \.self) { n in
                     Button("Select Tab \(n)") {
-                        WindowManager.shared.keyWindowManager()?.selectTab(at: n - 1)
+                        NotificationCenter.default.post(name: .selectTab, object: n - 1)
                     }
-                    .keyboardShortcut(String(n), modifiers: .command)
+                    .keyboardShortcut(KeyEquivalent(Character(String(n))), modifiers: .command)
                 }
             }
 
@@ -62,23 +58,29 @@ struct YouTubeOnMacApp: App {
                 Button("Toggle Full Screen") {
                     NSApp.keyWindow?.toggleFullScreen(nil)
                 }
-                .keyboardShortcut("f", modifiers: [.control, .command])
+                .keyboardShortcut(KeyEquivalent("f"), modifiers: [.control, .command])
             }
         }
     }
 }
 
+struct PlaceholderRootView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyMonitor: Any?
-    private var windowManager: WindowManager { WindowManager.shared }
+    private let windowManager = WindowManager.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Create the first window if the default launch doesn't.
-        DispatchQueue.main.async {
-            if NSApp.windows.isEmpty {
-                self.windowManager.createWindow()
+        // Close SwiftUI's default empty WindowGroup window and create our own.
+        NSApp.windows.forEach { window in
+            if window.contentViewController is NSHostingController<PlaceholderRootView> {
+                window.close()
             }
         }
+        windowManager.createWindow()
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard let chars = event.charactersIgnoringModifiers?.lowercased() else { return event }
@@ -114,6 +116,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return event
         }
+
+        // Subscribe to menu-triggered notifications so each window's manager reacts.
+        NotificationCenter.default.addObserver(self, selector: #selector(newWindow), name: .newWindow, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(newTab), name: .newTab, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(closeTab), name: .closeTab, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(nextTab), name: .nextTab, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(previousTab), name: .previousTab, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(selectTab(_:)), name: .selectTab, object: nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -127,6 +137,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windowManager.createWindow()
         }
         return true
+    }
+
+    @objc private func newWindow() { windowManager.createWindow() }
+    @objc private func newTab() { windowManager.keyWindowManager()?.addTab() }
+    @objc private func closeTab() { windowManager.keyWindowManager()?.closeSelectedTab() }
+    @objc private func nextTab() { windowManager.keyWindowManager()?.selectNextTab() }
+    @objc private func previousTab() { windowManager.keyWindowManager()?.selectPreviousTab() }
+    @objc private func selectTab(_ notification: Notification) {
+        if let n = notification.object as? Int {
+            windowManager.keyWindowManager()?.selectTab(at: n)
+        }
     }
 }
 
