@@ -260,8 +260,8 @@
 				CODE_SIGN_ENTITLEMENTS = YouTubeOnMac/YouTubeOnMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 31;
-				ENABLE_APP_SANDBOX = NO;
+				CURRENT_PROJECT_VERSION = 32;
+				MARKETING_VERSION = 3.2.1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = NO;
@@ -275,7 +275,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 3.2.0;
+				MARKETING_VERSION = 3.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fynnelsner.YouTubeOnMac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
@@ -296,8 +296,8 @@
 				CODE_SIGN_ENTITLEMENTS = YouTubeOnMac/YouTubeOnMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 31;
-				ENABLE_APP_SANDBOX = NO;
+				CURRENT_PROJECT_VERSION = 32;
+				MARKETING_VERSION = 3.2.1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = NO;
@@ -311,7 +311,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 3.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fynnelsner.YouTubeOnMac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;

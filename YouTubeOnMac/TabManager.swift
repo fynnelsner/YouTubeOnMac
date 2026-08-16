@@ -143,6 +143,8 @@ final class TabManager: ObservableObject {
 
     private static func createWebView() -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.processPool = sharedProcessPool
+        config.websiteDataStore = sharedDataStore
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         if #available(macOS 12.3, *) {
             config.preferences.isElementFullscreenEnabled = true
@@ -186,6 +188,15 @@ final class TabManager: ObservableObject {
         webView.allowsBackForwardNavigationGestures = true
         return webView
     }
+}
+
+// MARK: - Shared WebKit process / data store
+
+extension TabManager {
+    /// Shared process pool so all tabs share the same renderer process and persistent cookies.
+    private static let sharedProcessPool = WKProcessPool()
+    /// Shared data store so session cookies, theme prefs, and login state propagate to every tab.
+    private static let sharedDataStore = WKWebsiteDataStore.default()
 }
 
 // MARK: - Navigation / UI delegate
