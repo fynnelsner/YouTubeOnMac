@@ -23,12 +23,11 @@ struct WelcomeView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(red: 0.05, green: 0.05, blue: 0.05),
-                         Color(red: 0.10, green: 0.02, blue: 0.02)],
+                gradient: Gradient(colors: [Color(red: 0.05, green: 0.05, blue: 0.05),
+                                            Color(red: 0.10, green: 0.02, blue: 0.02)]),
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer().frame(height: 52)
@@ -118,6 +117,9 @@ private struct WelcomeButtonStyle: ButtonStyle {
                     .fill(Color.red.opacity(configuration.isPressed ? 0.8 : 1.0))
             )
             .shadow(color: Color.red.opacity(0.35), radius: 12, x: 0, y: 6)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+            .compositingGroup()
     }
 }
 
