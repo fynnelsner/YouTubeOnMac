@@ -58,10 +58,7 @@ final class YouTubeOnMacApp: NSObject, NSApplicationDelegate {
         let cmd = event.modifierFlags.contains(.command)
         let shift = event.modifierFlags.contains(.shift)
 
-        if cmd && chars == "t" {
-            windowManager.keyWindowManager()?.addTab()
-            return nil
-        }
+        // Cmd+T is handled by the main menu's New Tab item.
         if cmd && chars == "w" && !shift {
             windowManager.keyWindowManager()?.closeSelectedTab()
             return nil
