@@ -2,7 +2,8 @@
 //  ContentView.swift
 //  YouTubeOnMac
 //
-//  YouTube app with ad blocking, playback speed, zoom, sleep timer, and inline fullscreen.
+//  Native webview wrapper for YouTube with toolbar, sleep timer,
+//  inline fullscreen, and external-link handling. No injected ad blocking.
 //
 
 import SwiftUI
@@ -17,7 +18,11 @@ final class WebViewState: ObservableObject {
     @Published var isVideoFullscreen = false
 }
 
-// MARK: - Sleep Timer
+@MainActor
+final class NavState: ObservableObject {
+    @Published var canGoBack = false
+    @Published var canGoForward = false
+}
 
 @MainActor
 final class SleepTimer: ObservableObject {
@@ -49,7 +54,9 @@ final class SleepTimer: ObservableObject {
 
     func stop() {
         timer?.invalidate(); timer = nil
-        isActive = false; remainingSeconds = 0; endDate = nil
+        isActive = false
+        remainingSeconds = 0
+        endDate = nil
     }
 
     private func tick() {
@@ -59,7 +66,7 @@ final class SleepTimer: ObservableObject {
     }
 }
 
-// MARK: - AppKit Toolbar
+// MARK: - Toolbar
 
 struct AppKitToolbarSetup: NSViewRepresentable {
     @ObservedObject var webViewState: WebViewState
@@ -84,9 +91,7 @@ struct AppKitToolbarSetup: NSViewRepresentable {
         context.coordinator.refresh()
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     @MainActor
     class Coordinator: NSObject, NSToolbarDelegate {
@@ -97,9 +102,7 @@ struct AppKitToolbarSetup: NSViewRepresentable {
         var timerBadgeItem: NSToolbarItem?
         var timerBadgeTextField: NSTextField?
 
-        init(_ parent: AppKitToolbarSetup) {
-            self.parent = parent
-        }
+        init(_ parent: AppKitToolbarSetup) { self.parent = parent }
 
         func setup(window: NSWindow) {
             let t = NSToolbar(identifier: "YOM")
@@ -118,24 +121,16 @@ struct AppKitToolbarSetup: NSViewRepresentable {
             if let fwd = items[.init("forward")] {
                 fwd.isEnabled = parent.navState.canGoForward
             }
-            if let zoomLabel = items[.init("zoomLabel")] {
-                if let tf = zoomLabel.view as? NSTextField {
-                    tf.stringValue = "\(Int(parent.webView.pageZoom * 100))%"
-                }
+            if let zoomLabel = items[.init("zoomLabel")],
+               let tf = zoomLabel.view as? NSTextField {
+                tf.stringValue = "\(Int(parent.webView.pageZoom * 100))%"
             }
             if let timer = items[.init("timer")] as? NSMenuToolbarItem {
                 let active = parent.sleepTimer.isActive
-                timer.image = NSImage(
-                    systemSymbolName: active ? "timer.circle.fill" : "timer",
-                    accessibilityDescription: nil
-                )
+                timer.image = NSImage(systemSymbolName: active ? "timer.circle.fill" : "timer", accessibilityDescription: nil)
                 let menu = NSMenu()
                 if active {
-                    let cancel = NSMenuItem(
-                        title: "Cancel (\(parent.sleepTimer.remainingText))",
-                        action: #selector(stopTimer),
-                        keyEquivalent: ""
-                    )
+                    let cancel = NSMenuItem(title: "Cancel (\(parent.sleepTimer.remainingText))", action: #selector(stopTimer), keyEquivalent: "")
                     cancel.target = self
                     menu.addItem(cancel)
                     menu.addItem(.separator())
@@ -152,31 +147,33 @@ struct AppKitToolbarSetup: NSViewRepresentable {
                 menu.addItem(custom)
                 timer.menu = menu
             }
-            // Show/hide orange timer badge next to the timer button
+
             let active = parent.sleepTimer.isActive
             if active != wasTimerActive {
                 wasTimerActive = active
-                if active, let t = toolbar {
-                    let idx = t.items.firstIndex(where: { $0.itemIdentifier.rawValue == "timer" }).map { $0 + 1 } ?? 4
-                    t.insertItem(withItemIdentifier: .init("timerBadge"), at: idx)
+                if active, let t = toolbar,
+                   let idx = t.items.firstIndex(where: { $0.itemIdentifier.rawValue == "timer" }) {
+                    t.insertItem(withItemIdentifier: .init("timerBadge"), at: idx + 1)
                 } else if let idx = toolbar?.items.firstIndex(where: { $0.itemIdentifier.rawValue == "timerBadge" }) {
                     toolbar?.removeItem(at: idx)
                 }
             }
-            if active, let tf = timerBadgeTextField, let item = timerBadgeItem {
+            if active, let tf = timerBadgeTextField {
                 tf.stringValue = parent.sleepTimer.remainingText
                 tf.sizeToFit()
                 let width = max(50, tf.frame.width + 6 + 13 + 4 + 8)
                 tf.frame.origin = NSPoint(x: 6 + 13 + 4, y: (20 - tf.frame.height) / 2)
-                if let container = item.view {
+                if let item = timerBadgeItem, let container = item.view {
                     container.frame.size = NSSize(width: width, height: 20)
                 }
-                item.minSize = NSSize(width: width, height: 20)
-                item.maxSize = NSSize(width: width, height: 20)
+                timerBadgeItem?.minSize = NSSize(width: width, height: 20)
+                timerBadgeItem?.maxSize = NSSize(width: width, height: 20)
             }
         }
 
-        func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        func toolbar(_ toolbar: NSToolbar,
+                     itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+                     willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
             if let existing = items[itemIdentifier] { return existing }
 
             let item: NSToolbarItem
@@ -321,12 +318,8 @@ struct AppKitToolbarSetup: NSViewRepresentable {
                 parent.sleepTimer.start(seconds: s)
             }
         }
-        @objc func stopTimer() {
-            parent.sleepTimer.stop()
-        }
-        @objc func showCustomTimerSheet() {
-            parent.showCustomTimer = true
-        }
+        @objc func stopTimer() { parent.sleepTimer.stop() }
+        @objc func showCustomTimerSheet() { parent.showCustomTimer = true }
     }
 }
 
@@ -371,109 +364,104 @@ struct ContentView: View {
                 : CGColor(red: 1, green: 1, blue: 1, alpha: 1)
             ))
             .sheet(isPresented: $showCustomTimer) {
-                VStack(spacing: 0) {
-                    // Header
-                    VStack(spacing: 4) {
-                        Image(systemName: "moon.stars.fill")
-                            .font(.system(size: 28, weight: .light))
-                            .foregroundStyle(.secondary)
-                            .padding(.bottom, 4)
-                        Text("Sleep Timer")
-                            .font(.system(size: 18, weight: .semibold, design: .default))
-                        Text("Force-quits the app when time runs out")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 28)
-                    .padding(.bottom, 20)
-
-                    Divider()
-                        .padding(.horizontal, 0)
-
-                    // Duration input row
-                    HStack(spacing: 0) {
-                        Text("Duration")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.primary)
-                            .frame(width: 80, alignment: .trailing)
-                            .padding(.trailing, 12)
-
-                        TextField("e.g. 30, 5:30, 1:15:00", text: $customTimerInput)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 13))
-                            .frame(width: 180)
-                    }
-                    .padding(.vertical, 20)
-                    .padding(.horizontal, 20)
-
-                    Divider()
-                        .padding(.horizontal, 0)
-
-                    // Quick presets
-                    HStack(spacing: 0) {
-                        Text("Presets")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.primary)
-                            .frame(width: 80, alignment: .trailing)
-                            .padding(.trailing, 12)
-
-                        HStack(spacing: 6) {
-                            ForEach([("15 min", "15"), ("30 min", "30"), ("1 hr", "60"), ("2 hr", "120")], id: \.0) { pair in
-                                Button(pair.0) {
-                                    customTimerInput = pair.1
-                                }
-                                .buttonStyle(.borderless)
-                                .font(.system(size: 12, weight: .medium))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(Color.secondary.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                                )
-                                .foregroundStyle(.primary)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 16)
-                    .padding(.horizontal, 20)
-
-                    // Format hint
-                    Text("Numbers = minutes  ·  MM:SS  ·  HH:MM:SS")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                        .padding(.bottom, 16)
-
-                    Divider()
-                        .padding(.horizontal, 0)
-
-                    // Buttons
-                    HStack(spacing: 10) {
-                        Button("Cancel") {
-                            showCustomTimer = false
-                            customTimerInput = ""
-                        }
-                        .keyboardShortcut(.escape, modifiers: [])
-
-                        Button("Start Timer") {
-                            if let secs = parseDuration(customTimerInput), secs > 0 {
-                                sleepTimer.start(seconds: secs)
-                            }
-                            showCustomTimer = false
-                            customTimerInput = ""
-                        }
-                        .keyboardShortcut(.return, modifiers: [])
-                        .disabled(parseDuration(customTimerInput) == nil || (parseDuration(customTimerInput) ?? 0) <= 0)
-                    }
-                    .padding(.vertical, 16)
-                    .padding(.horizontal, 20)
-                }
-                .frame(width: 360)
-                .background(Color(colorScheme == .dark
-                    ? CGColor(red: 0.14, green: 0.14, blue: 0.14, alpha: 1)
-                    : CGColor(red: 0.97, green: 0.97, blue: 0.97, alpha: 1)
-                ))
+                customTimerSheet
             }
+    }
 
+    private var customTimerSheet: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 4) {
+                Image(systemName: "moon.stars.fill")
+                    .font(.system(size: 28, weight: .light))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+                Text("Sleep Timer")
+                    .font(.system(size: 18, weight: .semibold, design: .default))
+                Text("Force-quits the app when time runs out")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 28)
+            .padding(.bottom, 20)
+
+            Divider()
+
+            HStack(spacing: 0) {
+                Text("Duration")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .frame(width: 80, alignment: .trailing)
+                    .padding(.trailing, 12)
+
+                TextField("e.g. 30, 5:30, 1:15:00", text: $customTimerInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 13))
+                    .frame(width: 180)
+            }
+            .padding(.vertical, 20)
+            .padding(.horizontal, 20)
+
+            Divider()
+
+            HStack(spacing: 0) {
+                Text("Presets")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .frame(width: 80, alignment: .trailing)
+                    .padding(.trailing, 12)
+
+                HStack(spacing: 6) {
+                    ForEach([("15 min", "15"), ("30 min", "30"), ("1 hr", "60"), ("2 hr", "120")], id: \.0) { pair in
+                        Button(pair.0) {
+                            customTimerInput = pair.1
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        )
+                        .foregroundStyle(.primary)
+                    }
+                }
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 20)
+
+            Text("Numbers = minutes  ·  MM:SS  ·  HH:MM:SS")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 16)
+
+            Divider()
+
+            HStack(spacing: 10) {
+                Button("Cancel") {
+                    showCustomTimer = false
+                    customTimerInput = ""
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+
+                Button("Start Timer") {
+                    if let secs = parseDuration(customTimerInput), secs > 0 {
+                        sleepTimer.start(seconds: secs)
+                    }
+                    showCustomTimer = false
+                    customTimerInput = ""
+                }
+                .keyboardShortcut(.return, modifiers: [])
+                .disabled(parseDuration(customTimerInput).map { $0 <= 0 } ?? true)
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 20)
+        }
+        .frame(width: 360)
+        .background(Color(colorScheme == .dark
+            ? CGColor(red: 0.14, green: 0.14, blue: 0.14, alpha: 1)
+            : CGColor(red: 0.97, green: 0.97, blue: 0.97, alpha: 1)
+        ))
     }
 
     /// Parse "30", "5:30", "1:15:00" etc. into seconds
@@ -483,20 +471,12 @@ struct ContentView: View {
         let parts = s.split(separator: ":").compactMap { Double($0) }
         guard !parts.isEmpty else { return nil }
         switch parts.count {
-        case 1: return parts[0] * 60          // minutes
-        case 2: return parts[0] * 60 + parts[1]   // MM:SS
-        case 3: return parts[0] * 3600 + parts[1] * 60 + parts[2]  // HH:MM:SS
+        case 1: return parts[0] * 60
+        case 2: return parts[0] * 60 + parts[1]
+        case 3: return parts[0] * 3600 + parts[1] * 60 + parts[2]
         default: return nil
         }
     }
-}
-
-// MARK: - Nav State
-
-@MainActor
-final class NavState: ObservableObject {
-    @Published var canGoBack = false
-    @Published var canGoForward = false
 }
 
 // MARK: - WebView
@@ -507,11 +487,13 @@ struct WebView: NSViewRepresentable {
     let wkWebView: WKWebView
 
     init(state: WebViewState, navState: NavState) {
-        self.state = state; self.navState = navState
+        self.state = state
+        self.navState = navState
 
         let configuration = WKWebViewConfiguration()
         configuration.allowsAirPlayForMediaPlayback = true
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        configuration.preferences.isElementFullscreenEnabled = true
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         configuration.defaultWebpagePreferences = prefs
@@ -524,53 +506,9 @@ struct WebView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(state: state, navState: navState) }
 
     func makeNSView(context: Context) -> WKWebView {
-        // Compile and add native content-blocking rules once
-        if WebView.blockRules == nil {
-            let ruleJSON = """
-            [
-              {"action":{"type":"block"},"trigger":{"url-filter":"googleadservices\\.com"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"googlesyndication\\.com"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"doubleclick\\.net"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"google\\.com/pagead"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/pagead"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/ads"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/qoe.*ad"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/get_video_info.*adformat"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/youtubei/v1/log_event"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/youtubei/v1/log_interaction"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/youtubei/v1/reel/reel_item_watch"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/watchtime"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/atr"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/api/stats/pla"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"googlevideo\\.com.*&oad"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"googlevideo\\.com/videoplayback.*oad"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/ptracking"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/pagead/conversion"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"youtube\\.com/pagead/1p-user-list"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"googletagservices\\.com"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"googletagmanager\\.com"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"google-analytics\\.com"}},
-              {"action":{"type":"block"},"trigger":{"url-filter":"firebase\\.google\\.com"}}
-            ]
-            """
-            WKContentRuleListStore.default().compileContentRuleList(
-                forIdentifier: "yom-adblock-v2",
-                encodedContentRuleList: ruleJSON
-            ) { list, _ in
-                if let list = list {
-                    WebView.blockRules = list
-                    self.wkWebView.configuration.userContentController.add(list)
-                }
-            }
-        } else if let list = WebView.blockRules {
-            wkWebView.configuration.userContentController.add(list)
-        }
-
         wkWebView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15"
         wkWebView.navigationDelegate = context.coordinator
         wkWebView.uiDelegate = context.coordinator
-        wkWebView.configuration.userContentController.removeScriptMessageHandler(forName: "yomFs")
-        wkWebView.configuration.userContentController.removeScriptMessageHandler(forName: "yomLink")
         wkWebView.configuration.userContentController.add(context.coordinator, name: "yomFs")
         wkWebView.configuration.userContentController.add(context.coordinator, name: "yomLink")
         if wkWebView.url == nil, let url = URL(string: "https://www.youtube.com") {
@@ -579,14 +517,15 @@ struct WebView: NSViewRepresentable {
         return wkWebView
     }
 
-    static var blockRules: WKContentRuleList?
-
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
         private let state: WebViewState
         private let navState: NavState
-        init(state: WebViewState, navState: NavState) { self.state = state; self.navState = navState }
+        init(state: WebViewState, navState: NavState) {
+            self.state = state
+            self.navState = navState
+        }
 
         func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
             switch msg.name {
@@ -595,15 +534,16 @@ struct WebView: NSViewRepresentable {
                 DispatchQueue.main.async { self.state.isVideoFullscreen = v }
             case "yomLink":
                 guard let urlString = msg.body as? String, let url = URL(string: urlString) else { return }
-                print("[YOM] Swift opening URL:", urlString)
                 DispatchQueue.main.async { NSWorkspace.shared.open(url) }
             default:
                 break
             }
         }
 
-        // MARK: - WKUIDelegate (handles window.open / target="_blank")
-        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        func webView(_ webView: WKWebView,
+                     createWebViewWith configuration: WKWebViewConfiguration,
+                     for navigationAction: WKNavigationAction,
+                     windowFeatures: WKWindowFeatures) -> WKWebView? {
             if let url = navigationAction.request.url {
                 DispatchQueue.main.async { NSWorkspace.shared.open(url) }
             }
@@ -617,27 +557,28 @@ struct WebView: NSViewRepresentable {
             }
         }
 
-        func webView(_ wv: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        func webView(_ wv: WKWebView,
+                     decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             guard let url = navigationAction.request.url else {
                 decisionHandler(.allow)
                 return
             }
             let scheme = url.scheme?.lowercased() ?? ""
-            // Only handle http/https links externally; allow about:blank, javascript:, mailto:, etc. to stay in the webview or be cancelled
             guard scheme == "http" || scheme == "https" else {
                 decisionHandler(.allow)
                 return
             }
             let host = url.host?.lowercased() ?? ""
-            let isYouTube = host.contains("youtube.com") || host.contains("youtube-nocookie.com") || host.contains("google.com") || host.contains("googlevideo.com")
+            let isYouTube = host.contains("youtube.com")
+                || host.contains("youtube-nocookie.com")
+                || host.contains("google.com")
+                || host.contains("googlevideo.com")
             if isYouTube {
                 decisionHandler(.allow)
                 return
             }
-            // External link — open in default browser
-            DispatchQueue.main.async {
-                NSWorkspace.shared.open(url)
-            }
+            DispatchQueue.main.async { NSWorkspace.shared.open(url) }
             decisionHandler(.cancel)
         }
     }
@@ -652,12 +593,15 @@ struct WebView: NSViewRepresentable {
       const P=()=>document.querySelector(".html5-video-player");
       const V=()=>{const p=P();return p?p.querySelector("video"):document.querySelector("video")};
 
-      // ── Fullscreen ──────────────────────────────────
+      // Inline fullscreen (avoids native full-screen window swap)
       let fs=false;
       const F="yom-fs";
-      const iFs=()=>{if(document.getElementById(F))return;const s=document.createElement("style");s.id=F;
-      s.textContent=`html.${F},body.${F}{overflow:hidden!important}html.${F} ytd-masthead,html.${F} #secondary,html.${F} #chat,html.${F} #below,html.${F} #comments{display:none!important}html.${F} ytd-watch-flexy #primary{margin:0!important;width:100%!important;max-width:100%!important}.html5-video-player.${F}-p{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important;display:flex!important;align-items:center!important;justify-content:center!important}.html5-video-player.${F}-p .html5-video-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;display:flex!important;align-items:center!important;justify-content:center!important;transform:none!important;margin:0!important;padding:0!important;border:none!important}.html5-video-player.${F}-p video{width:100%!important;height:100%!important;object-fit:contain!important;object-position:center!important;margin:0!important;padding:0!important}`;
-      document.head.appendChild(s)};
+      const iFs=()=>{
+        if(document.getElementById(F))return;
+        const s=document.createElement("style");s.id=F;
+        s.textContent=`html.${F},body.${F}{overflow:hidden!important}html.${F} ytd-masthead,html.${F} #secondary,html.${F} #chat,html.${F} #below,html.${F} #comments{display:none!important}html.${F} ytd-watch-flexy #primary{margin:0!important;width:100%!important;max-width:100%!important}.html5-video-player.${F}-p{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important;display:flex!important;align-items:center!important;justify-content:center!important}.html5-video-player.${F}-p .html5-video-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;display:flex!important;align-items:center!important;justify-content:center!important;transform:none!important;margin:0!important;padding:0!important;border:none!important}.html5-video-player.${F}-p video{width:100%!important;height:100%!important;object-fit:contain!important;object-position:center!important;margin:0!important;padding:0!important}`;
+        document.head.appendChild(s)
+      };
       const eFs=()=>{iFs();const p=P();if(!p)return;fs=true;document.documentElement.classList.add(F);document.body.classList.add(F);p.classList.add(F+"-p","ytp-fullscreen");try{webkit.messageHandlers.yomFs.postMessage(true)}catch{}};
       const xFs=()=>{fs=false;document.documentElement.classList.remove(F);document.body.classList.remove(F);const p=P();if(p){p.classList.remove(F+"-p","ytp-fullscreen")}try{webkit.messageHandlers.yomFs.postMessage(false)}catch{}};
       const tFs=()=>fs?xFs():eFs();
@@ -672,155 +616,27 @@ struct WebView: NSViewRepresentable {
       document.addEventListener("fullscreenchange",()=>{if(document.fullscreenElement){eFs();try{document.exitFullscreen()}catch{}}},true);
       document.addEventListener("webkitfullscreenchange",()=>{if(document.fullscreenElement){eFs();try{document.exitFullscreen()}catch{}}},true);
 
-      document.addEventListener("keydown",e=>{if(e.metaKey||e.ctrlKey||e.altKey)return;const t=document.activeElement?.tagName;if(t==="INPUT"||t==="TEXTAREA"||document.activeElement?.getAttribute("contenteditable")==="true")return;if(e.key.toLowerCase()==="f"){e.preventDefault();e.stopPropagation();tFs()}else if(e.key==="Escape"&&fs){e.preventDefault();e.stopPropagation();xFs()}},true);
-      document.addEventListener("click",e=>{if(e.target instanceof Element&&e.target.closest(".ytp-fullscreen-button")){e.preventDefault();e.stopPropagation();tFs()}},true);
+      document.addEventListener("keydown",e=>{
+        if(e.metaKey||e.ctrlKey||e.altKey)return;
+        const t=document.activeElement?.tagName;
+        if(t==="INPUT"||t==="TEXTAREA"||document.activeElement?.getAttribute("contenteditable")==="true")return;
+        if(e.key.toLowerCase()==="f"){e.preventDefault();e.stopPropagation();tFs()}
+        else if(e.key==="Escape"&&fs){e.preventDefault();e.stopPropagation();xFs()}
+      },true);
+      document.addEventListener("click",e=>{
+        const btn=e.target?.closest(".ytp-fullscreen-button");
+        if(btn){e.preventDefault();e.stopPropagation();tFs()}
+      },true);
 
-      // ── Speed ──────────────────────────────────────
-      window.yomSetSpeed=s=>{const v=V();if(v){v.playbackRate=s;return}let c=0;const r=setInterval(()=>{const v2=V();if(v2){v2.playbackRate=s;clearInterval(r)}if(++c>10)clearInterval(r)},300)};
-
-      // ── Ad Block ───────────────────────────────────
-      // Strategy: hook JSON.parse so EVERY parsed player response is stripped of ad metadata
-      // before YouTube's player code ever sees it. Also CSS-hide + nuke any ad DOM that slips through.
-
-      // 1) Global JSON.parse hook — catches fetch().json(), XHR responseText, and any internal parser
-      const stripAds=(obj)=>{
-        if(!obj||typeof obj!=="object")return;
-        if(Array.isArray(obj.adPlacements))obj.adPlacements=[];
-        if(Array.isArray(obj.playerAds))obj.playerAds=[];
-        delete obj.adBreakHeartbeatParams;
-        delete obj.adSlots;
-        delete obj.adBreakUiElements;
-        if(obj.auxiliaryUi?.messageRenderers){
-          for(const k of Object.keys(obj.auxiliaryUi.messageRenderers)){
-            if(/ad|promo|shopping|merch/i.test(k))delete obj.auxiliaryUi.messageRenderers[k];
-          }
-        }
-        if(obj.webResponseContextExtensionData?.yrf){
-          delete obj.webResponseContextExtensionData.yrf;
-        }
-        for(const k of Object.keys(obj)){
-          const v=obj[k];
-          if(v&&typeof v==="object")stripAds(v);
-        }
+      // Playback speed hook
+      window.yomSetSpeed=s=>{
+        const v=V();
+        if(v){v.playbackRate=s;return}
+        let c=0;
+        const r=setInterval(()=>{const v2=V();if(v2){v2.playbackRate=s;clearInterval(r)}if(++c>10)clearInterval(r)},300);
       };
 
-      const _origJSONParse=JSON.parse;
-      JSON.parse=function(text,reviver){
-        try{
-          const r=_origJSONParse.call(this,text,reviver);
-          if(r&&typeof r==="object")stripAds(r);
-          return r;
-        }catch(e){return _origJSONParse.call(this,text,reviver);}
-      };
-
-      // 2) Hook Response.prototype.json for fetch() path
-      const _origRespJson=Response.prototype.json;
-      Response.prototype.json=async function(){
-        const r=await _origRespJson.call(this);
-        if(r&&typeof r==="object")stripAds(r);
-        return r;
-      };
-
-      // 3) Intercept ytInitialPlayerResponse (set by inline script before this runs)
-      try{
-        if(window.ytInitialPlayerResponse)stripAds(window.ytInitialPlayerResponse);
-        let _ytipr=window.ytInitialPlayerResponse;
-        Object.defineProperty(window,"ytInitialPlayerResponse",{
-          get(){return _ytipr;},
-          set(v){_ytipr=v;stripAds(_ytipr);},
-          configurable:true
-        });
-      }catch(e){}
-
-      // 4) Also intercept ytplayer.config.args.player_response if present
-      try{
-        if(window.ytplayer?.config?.args?.player_response){
-          const pr=JSON.parse(window.ytplayer.config.args.player_response);
-          stripAds(pr);
-          window.ytplayer.config.args.player_response=JSON.stringify(pr);
-        }
-      }catch(e){}
-
-      // 5) CSS-hide ad DOM nodes
-      const adCSS=`
-        .video-ads,.ytp-ad-module,.ytp-ad-player-overlay,.ytp-ad-overlay-container,
-        .ytp-ad-overlay-slot,.ytp-ad-image-overlay,.ytp-ad-text,.ytp-ad-preview-container,
-        .ytp-ad-progress,.ytp-ad-duration,.ytp-ad-feedback,
-        .ytp-ad-visit-advertiser,.ytp-ad-info,.ytp-ad-info-hover,.ytp-ad-timed-pie,
-        .ytp-ad-overlay-image,.ytp-ad-overlay-video,.ytp-preview-ad,.ytp-ad-text-overlay,
-        #player-ads,#masthead-ad,
-        ytd-display-ad-renderer,ytd-promoted-video-renderer,ytd-ad-slot-renderer,
-        ytd-banner-promo-renderer,ytd-action-companion-ad-renderer,
-        ytd-compact-promoted-video-renderer,ytd-merch-shelf-renderer,
-        ytd-player-legacy-desktop-watch-ads-renderer,
-        .ytd-companion-slot-renderer,.ytd-player-ads,
-        ytd-shopping-panel-renderer,.ytp-suggested-action-container
-        {display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}
-        .ytp-ad-skip-slot{opacity:0!important;}
-      `;
-      const injectStyle=()=>{
-        const s=document.createElement("style");
-        s.textContent=adCSS;
-        (document.head||document.documentElement).appendChild(s);
-      };
-      injectStyle();
-      if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",injectStyle);
-
-      // 6) Click skip + remove ad nodes + force-remove ad-showing class
-      const clickSkip=()=>{
-        for(const sel of [".ytp-ad-skip-button",".ytp-ad-skip-button-modern",".ytp-skip-ad-button","button.ytp-skip-ad-button",".ytp-ad-overlay-close-button","button[aria-label*='Skip']"]){
-          const b=document.querySelector(sel);
-          if(b){b.click();return true;}
-        }
-        return false;
-      };
-
-      const nukeDomAds=()=>{
-        clickSkip();
-        const p=P();
-        if(!p)return;
-        for(const sel of [".video-ads",".ytp-preview-ad",".ytp-ad-module",".ytp-ad-player-overlay",".ytp-ad-overlay-container",".ytp-ad-skip-slot"]){
-          const ac=p.querySelector(sel);
-          if(ac){
-            ac.querySelectorAll("video").forEach(v=>{
-              try{v.pause();v.removeAttribute("src");v.src="";v.srcObject=null;v.load();}catch(e){}
-            });
-            ac.remove();
-          }
-        }
-        if(p.classList.contains("ad-showing")){
-          p.classList.remove("ad-showing");
-          const v=V();
-          if(v&&v.paused){try{v.play();}catch(e){}}
-        }
-      };
-
-      const obs=new MutationObserver(muts=>{
-        for(const m of muts){
-          if(m.type==="attributes"&&m.attributeName==="class"){
-            if(m.target.classList?.contains("ad-showing"))nukeDomAds();
-          }
-          for(const n of m.addedNodes){
-            if(!(n instanceof HTMLElement))continue;
-            if(n.matches?.(".video-ads,.ytp-ad-module,.ytp-ad-player-overlay,.ytp-preview-ad,.ytp-suggested-action-container"))n.remove();
-            if(n.querySelector?.(".video-ads,.ytp-preview-ad"))nukeDomAds();
-            if(n.classList?.contains("html5-video-player")&&n.classList.contains("ad-showing"))nukeDomAds();
-          }
-        }
-      });
-      obs.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:["class"]});
-
-      setInterval(nukeDomAds,50);
-      console.log("[YOM] ad blocker active");
-
-      // ── External Links ─────────────────────────────
-      // Strategy: patch EVERY <a> tag as it enters the DOM with a capture-phase
-      // click listener directly on the element. YouTube's delegated event handlers
-      // (bubble phase on parent elements) can't stop us because capture runs first.
-      // Also unwrap YouTube redirect URLs and hooks window.open/location.
-      // ONLY mechanism: webkit.messageHandlers.yomLink — never window.open (shows dialog).
-
-      // Unwrap youtube.com/redirect?q=... wrapper URLs
+      // External links handler
       const unwrapRedirect=(url)=>{
         if(typeof url!=="string")return url;
         if(url.includes("youtube.com/redirect")||url.includes("youtube.com/shorts/redirect")){
@@ -841,20 +657,17 @@ struct WebView: NSViewRepresentable {
 
       const openExternal=(url)=>{
         if(!isExternal(url))return false;
-        console.log("[YOM] opening external:",url);
-        if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.yomLink){
+        if(window.webkit?.messageHandlers?.yomLink){
           window.webkit.messageHandlers.yomLink.postMessage(url);
           return true;
         }
-        console.error("[YOM] yomLink handler missing — link cannot open");
         return false;
       };
 
-      // Patch an individual anchor element
       const patchAnchor=(a)=>{
         if(a.dataset?.yomPatched)return;
         a.dataset.yomPatched="1";
-        a.addEventListener("click",(e)=>{
+        const handler=(e)=>{
           const raw=a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||a.getAttribute("data-href")||"";
           const url=unwrapRedirect(a.href||raw);
           if(!url||url.startsWith("#")||url.startsWith("javascript:")||url==="about:blank")return;
@@ -862,14 +675,9 @@ struct WebView: NSViewRepresentable {
             e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
             openExternal(url);
           }
-        },true);
-        a.addEventListener("auxclick",(e)=>{
-          const url=unwrapRedirect(a.href||a.getAttribute("href")||a.getAttribute("data-target")||a.getAttribute("data-url")||"");
-          if(isExternal(url)){
-            e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-            openExternal(url);
-          }
-        },true);
+        };
+        a.addEventListener("click",handler,true);
+        a.addEventListener("auxclick",handler,true);
       };
 
       const patchAllAnchors=()=>{
@@ -879,10 +687,7 @@ struct WebView: NSViewRepresentable {
           el.dataset.yomPatched="1";
           el.addEventListener("click",(e)=>{
             const url=unwrapRedirect(el.getAttribute("data-target")||el.getAttribute("data-url")||el.getAttribute("href")||el.getAttribute("data-href")||"");
-            if(isExternal(url)){
-              e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-              openExternal(url);
-            }
+            if(isExternal(url)){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openExternal(url);}
           },true);
         });
       };
@@ -891,18 +696,13 @@ struct WebView: NSViewRepresentable {
       linkObs.observe(document.documentElement,{childList:true,subtree:true});
       patchAllAnchors();
 
-      // Hook window.open — only use webkit message handler, never call original for external
       const _origOpen=window.open;
       window.open=function(url,target,features){
         const real=unwrapRedirect(url);
-        if(isExternal(real)){
-          const ok=openExternal(real);
-          return null;  // never call original — avoids WebKit security dialog
-        }
+        if(isExternal(real)){openExternal(real);return null;}
         return _origOpen.call(this,url,target,features);
       };
 
-      // Hook location mutations
       const _origAssign=window.location.assign;
       window.location.assign=function(url){
         const real=unwrapRedirect(url);
@@ -915,18 +715,10 @@ struct WebView: NSViewRepresentable {
         if(isExternal(real)){openExternal(real);return;}
         return _origReplace.call(this,url);
       };
-      let _locHref=window.location.href;
-      Object.defineProperty(window.location,"href",{
-        get(){return _locHref;},
-        set(v){
-          const real=unwrapRedirect(v);
-          if(isExternal(real)){openExternal(real);return;}
-          _locHref=v;window.location.assign(v);
-        },
-        configurable:true
-      });
-
-      console.log("[YOM] link interceptor active — handler exists:",!!(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.yomLink));
     })();
     """
+}
+
+#Preview {
+    ContentView()
 }

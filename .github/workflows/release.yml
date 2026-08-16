@@ -1,0 +1,80 @@
+name: Build and Release Universal DMG
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Build universal app
+        run: |
+          xcodebuild -project YouTubeOnMac.xcodeproj \
+            -scheme YouTubeOnMac \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            ARCHS="x86_64 arm64" \
+            build
+          # Locate the built app
+          APP=$(find ~/Library/Developer/Xcode/DerivedData -name 'YouTubeOnMac.app' -type d | head -n 1)
+          echo "BUILT_APP=$APP" >> "$GITHUB_ENV"
+
+      - name: Verify architectures
+        run: |
+          lipo -archs "$BUILT_APP/Contents/MacOS/YouTubeOnMac"
+
+      - name: Stage DMG
+        run: |
+          STAGE="dmg-staging-${{ github.run_id }}"
+          mkdir -p "$STAGE"
+          cp -R "$BUILT_APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          echo "DMG_STAGE=$STAGE" >> "$GITHUB_ENV"
+
+      - name: Create DMG
+        run: |
+          DMG="YouTubeOnMac-${{ github.ref_name || github.sha }}.dmg"
+          hdiutil create -volname "YouTubeOnMac" -srcfolder "$DMG_STAGE" \
+            -ov -format UDZO -o "$DMG"
+          echo "DMG_PATH=$DMG" >> "$GITHUB_ENV"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouTubeOnMac-dmg
+          path: ${{ env.DMG_PATH }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download DMG artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: YouTubeOnMac-dmg
+          path: ./dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./dist/*.dmg
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

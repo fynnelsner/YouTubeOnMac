@@ -1,27 +1,94 @@
 # YouTubeOnMac
 
-![YouTubeOnMac](https://i.imgur.com/CHs9vIi.jpeg)
+A lightweight, native-feeling YouTube app for macOS. It wraps YouTube in a dedicated WKWebView window so you get the full YouTube experience without keeping a browser tab open.
 
-YouTubeOnMac is a webview wrapper for YouTube for macOS.
+![YouTubeOnMac screenshot placeholder](https://i.imgur.com/CHs9vIi.jpeg)
 
-It was made for people who prefer Safari and don't want to have to open Chrome just to launch their official web app.
+## Download
 
-[Download the latest version here.](https://github.com/devyytrades/YouTubeOnMac/releases)
+Grab the latest universal DMG from the [Releases](https://github.com/fynnelsner/YouTubeOnMac/releases) page. The same app runs natively on Apple Silicon and Intel Macs.
 
-## Malicious Software Warning
+## Features
 
-When you try and open YouTubeOnMac for the first time, you will likely encounter this error:
+- **Native Mac app** with a clean toolbar and inline fullscreen
+- **Universal binary** — Apple Silicon and Intel from one download
+- **External links open in your default browser** automatically
+- **Sleep timer** with quick presets or a custom duration
+- **Playback speed control** and **page zoom** from the toolbar
+- **No injected ad blockers** — YouTube works as designed, no fragile hacks
+- **Welcome screen** on first launch
+
+## System Requirements
+
+- macOS 11 Big Sur or later
+- Apple Silicon or Intel Mac
+
+## Installation
+
+1. Download `YouTubeOnMac.dmg` from [Releases](https://github.com/fynnelsner/YouTubeOnMac/releases).
+2. Open the DMG and drag **YouTubeOnMac** into your **Applications** folder.
+3. Launch the app from Applications.
+
+### First Launch
+
+Because the app is not notarized by Apple, you may see:
 
 > “YouTubeOnMac” can’t be opened because Apple cannot check it for malicious software.
 
-Just click `OK`, then go to `Settings -> Security & Privacy`, and click the `Open Anyway` button.
+Click **OK**, then open **System Settings → Privacy & Security** and scroll down to click **Open Anyway**. This is standard for independently distributed Mac apps. The app is clean; it is only a wrapper around YouTube.
 
-This app does not contain a virus or anything sketchy, it's just what Apple does for developers who have not registered with them, unfortunately.
+## Building from Source
+
+Open `YouTubeOnMac.xcodeproj` in Xcode 15 or later and build the `YouTubeOnMac` scheme. Release builds are configured as a universal binary for `x86_64` and `arm64`.
+
+To build from the command line on a Mac:
+
+```bash
+xcodebuild -project YouTubeOnMac.xcodeproj \
+  -scheme YouTubeOnMac \
+  -configuration Release \
+  -destination "generic/platform=macOS" \
+  CODE_SIGN_IDENTITY="-" \
+  CODE_SIGNING_REQUIRED=NO \
+  ONLY_ACTIVE_ARCH=NO \
+  build
+```
+
+The unsigned `.app` will appear in the DerivedData build products folder.
+
+## Packaging a DMG
+
+The project includes a GitHub Actions workflow that builds and packages the DMG automatically on every release. To do it manually:
+
+```bash
+mkdir -p /tmp/YouTubeOnMac
+rm -rf /tmp/YouTubeOnMac/YouTubeOnMac.app
+cp -R path/to/YouTubeOnMac.app /tmp/YouTubeOnMac/
+ln -s /Applications /tmp/YouTubeOnMac/Applications
+hdiutil create -volname "YouTubeOnMac" -srcfolder /tmp/YouTubeOnMac \
+  -ov -format UDZO -o YouTubeOnMac.dmg
+```
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `⌃⌘F` | Toggle inline fullscreen |
+| `F` | Toggle inline fullscreen (when video player is focused) |
+| `Esc` | Exit inline fullscreen |
+
+## Why no ad blocker?
+
+Previous versions tried to inject aggressive JavaScript ad blocking. It frequently broke as YouTube changed their site, caused playback issues, and made the app feel unreliable. This version keeps the wrapper minimal and lets YouTube behave normally.
 
 ## Contributing
 
-This app was created with SwiftUI within XCode on Mac.
+Pull requests are welcome. If you want to add a feature, keep the app lightweight and native-feeling. Open an issue first for large changes.
 
-It is super simple right now, but more features may be added in the future.
+## License
 
-If you would like to add a feature, please feel free to submit a Pull Request (PR).
+MIT
+
+---
+
+Made by [Fynn Elsner](https://github.com/fynnelsner).
