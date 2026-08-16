@@ -58,10 +58,14 @@ final class TabManager: ObservableObject {
         tabs.append(tab)
         selectedTabID = tab.id
 
-        if let req = request {
-            webView.load(req)
-        } else {
-            webView.load(URLRequest(url: startURL))
+        applySystemTheme(to: webView) {
+            DispatchQueue.main.async {
+                if let req = request {
+                    webView.load(req)
+                } else {
+                    webView.load(URLRequest(url: startURL))
+                }
+            }
         }
 
         return tab
@@ -192,8 +196,27 @@ final class TabManager: ObservableObject {
         config.userContentController = userController
 
         let webView = WKWebView(frame: .zero, configuration: config)
+        webView.appearance = NSApp.effectiveAppearance
         webView.allowsBackForwardNavigationGestures = true
         return webView
+    }
+
+    private func applySystemTheme(to webView: WKWebView, completion: @escaping () -> Void) {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        // YouTube's PREF cookie field f6 controls the site theme.
+        let prefValue = isDark ? "f6=400" : "f6=8"
+        guard let cookie = HTTPCookie(properties: [
+            .domain: ".youtube.com",
+            .path: "/",
+            .name: "PREF",
+            .value: prefValue,
+            .secure: "TRUE",
+            .expires: Date(timeIntervalSinceNow: 31536000)
+        ]) else {
+            completion()
+            return
+        }
+        webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie, completionHandler: completion)
     }
 }
 
