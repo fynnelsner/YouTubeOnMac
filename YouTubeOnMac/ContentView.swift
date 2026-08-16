@@ -73,6 +73,10 @@ struct ContentView: View {
                         .allowsHitTesting(tabManager.selectedTabID == tab.id)
                 }
 
+                if tabManager.tabs.isEmpty {
+                    LoadingPlaceholder()
+                }
+
                 AppKitToolbarSetup(
                     manager: tabManager,
                     sleepTimer: sleepTimer,
@@ -89,6 +93,9 @@ struct ContentView: View {
                 ? Color(red: 0.097, green: 0.097, blue: 0.097)
                 : Color.white
         )
+        .onAppear {
+            tabManager.ensureInitialTab()
+        }
     }
 
     private var customTimerSheet: some View {
@@ -212,6 +219,36 @@ struct WebViewContainer: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 
+// MARK: - Startup loading placeholder
+
+struct LoadingPlaceholder: View {
+    var body: some View {
+        ZStack {
+            Color(red: 0.06, green: 0.06, blue: 0.06)
+                .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.red)
+                        .frame(width: 76, height: 54)
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(.white)
+                }
+
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .scaleEffect(0.9)
+
+                Text("Loading YouTube…")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+        }
+    }
+}
+
 // MARK: - Toolbar
 
 struct AppKitToolbarSetup: NSViewRepresentable {
@@ -225,16 +262,14 @@ struct AppKitToolbarSetup: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        DispatchQueue.main.async {
-            if let window = view.window, window.toolbar == nil {
-                context.coordinator.setup(window: window)
-            }
-        }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let window = nsView.window else { return }
+        if window.toolbar == nil {
+            context.coordinator.setup(window: window)
+        }
         window.toolbar?.isVisible = !(manager.selectedTab?.isFullscreen ?? false)
         context.coordinator.refresh()
     }

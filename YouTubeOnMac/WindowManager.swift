@@ -23,7 +23,11 @@ final class WindowManager: ObservableObject {
         currentID += 1
         let manager = TabManager()
 
-        let hostingController = NSHostingController(rootView: RootView().environmentObject(manager))
+        let contentView = RootView()
+            .environmentObject(manager)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        let hostingController = NSHostingController(rootView: contentView)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -37,6 +41,10 @@ final class WindowManager: ObservableObject {
         window.center()
         window.minSize = NSSize(width: 800, height: 500)
         window.isReleasedWhenClosed = false
+
+        // Ensure the SwiftUI view actually fills the window on first display.
+        hostingController.view.frame = window.contentView?.bounds ?? window.contentRect(forFrameRect: window.frame)
+        hostingController.view.autoresizingMask = [.width, .height]
 
         let controller = WindowController(window: window, manager: manager)
         windows.append(controller)

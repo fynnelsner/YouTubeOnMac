@@ -32,6 +32,13 @@ final class TabManager: ObservableObject {
     private var observers: [UUID: NSKeyValueObservation] = [:]
 
     init() {
+        // Do not create the initial webview here; wait for the window to appear
+        // so the app launches instantly and the first frame is shown immediately.
+    }
+
+    /// Creates the first tab only if none exist. Called from ContentView.onAppear.
+    func ensureInitialTab() {
+        guard tabs.isEmpty else { return }
         addTab()
     }
 
