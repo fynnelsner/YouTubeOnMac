@@ -373,13 +373,13 @@ struct ContentView: View {
             VStack(spacing: 4) {
                 Image(systemName: "moon.stars.fill")
                     .font(.system(size: 28, weight: .light))
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.secondary)
                     .padding(.bottom, 4)
                 Text("Sleep Timer")
                     .font(.system(size: 18, weight: .semibold, design: .default))
                 Text("Force-quits the app when time runs out")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.secondary)
             }
             .padding(.top, 28)
             .padding(.bottom, 20)
@@ -389,7 +389,7 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 Text("Duration")
                     .font(.system(size: 13))
-                    .foregroundStyle(.primary)
+                    .foregroundColor(.primary)
                     .frame(width: 80, alignment: .trailing)
                     .padding(.trailing, 12)
 
@@ -406,7 +406,7 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 Text("Presets")
                     .font(.system(size: 13))
-                    .foregroundStyle(.primary)
+                    .foregroundColor(.primary)
                     .frame(width: 80, alignment: .trailing)
                     .padding(.trailing, 12)
 
@@ -423,7 +423,7 @@ struct ContentView: View {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .fill(Color.secondary.opacity(colorScheme == .dark ? 0.15 : 0.08))
                         )
-                        .foregroundStyle(.primary)
+                        .foregroundColor(.primary)
                     }
                 }
             }
@@ -432,7 +432,7 @@ struct ContentView: View {
 
             Text("Numbers = minutes  ·  MM:SS  ·  HH:MM:SS")
                 .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .foregroundColor(.secondary.opacity(0.7))
                 .padding(.bottom, 16)
 
             Divider()
@@ -493,8 +493,7 @@ struct WebView: NSViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.allowsAirPlayForMediaPlayback = true
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-        configuration.preferences.isElementFullscreenEnabled = true
-        let prefs = WKWebpagePreferences()
+                let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         configuration.defaultWebpagePreferences = prefs
         configuration.userContentController.addUserScript(

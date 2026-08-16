@@ -47,12 +47,12 @@ struct WelcomeView: View {
 
                 Text("YouTubeOnMac")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundColor(.white)
                     .padding(.top, 24)
 
                 Text("YouTube, but better on Mac")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundColor(.white.opacity(0.7))
                     .padding(.top, 6)
 
                 Spacer().frame(height: 44)
@@ -63,17 +63,17 @@ struct WelcomeView: View {
                         HStack(spacing: 16) {
                             Image(systemName: f.icon)
                                 .font(.system(size: 24, weight: .semibold))
-                                .foregroundStyle(.red)
+                                .foregroundColor(.red)
                                 .frame(width: 32, alignment: .center)
-                                .symbolRenderingMode(.hierarchical)
+                                
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(f.title)
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
+                                    .foregroundColor(.white)
                                 Text(f.subtitle)
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.65))
+                                    .foregroundColor(.white.opacity(0.65))
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer()
@@ -95,7 +95,7 @@ struct WelcomeView: View {
                 Toggle("Don't show this again", isOn: $hasSeenWelcome)
                     .toggleStyle(.checkbox)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundColor(.white.opacity(0.75))
                     .padding(.top, 16)
 
                 Spacer().frame(height: 40)
@@ -110,7 +110,7 @@ private struct WelcomeButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundColor(.white)
             .padding(.horizontal, 36)
             .padding(.vertical, 12)
             .background(

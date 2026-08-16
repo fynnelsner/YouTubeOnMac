@@ -19,7 +19,7 @@ struct RootView: View {
 
             if showWelcome {
                 WelcomeView(isPresented: $showWelcome, hasSeenWelcome: $hasSeenWelcome)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
+                    .transition(.opacity)
                     .zIndex(1)
             }
         }
