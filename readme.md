@@ -6,7 +6,9 @@ A lightweight, native-feeling YouTube app for macOS. It wraps YouTube in a dedic
 
 ## Download
 
-Grab the latest universal DMG from the [Releases](https://github.com/fynnelsner/YouTubeOnMac/releases) page. The same app runs natively on Apple Silicon and Intel Macs.
+Grab the latest universal DMG from the [latest release](https://github.com/fynnelsner/YouTubeOnMac/releases/latest).
+
+The same app runs natively on Apple Silicon (`arm64`) and Intel (`x86_64`) Macs from a single download.
 
 ## Features
 
