@@ -28,13 +28,13 @@ final class WindowManager: ObservableObject {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         let hostingController = NSHostingController(rootView: contentView)
+        let initialFrame = NSRect(x: 0, y: 0, width: 1280, height: 800)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
+            contentRect: initialFrame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        window.contentViewController = hostingController
         window.title = "YouTubeOnMac"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -42,9 +42,18 @@ final class WindowManager: ObservableObject {
         window.minSize = NSSize(width: 800, height: 500)
         window.isReleasedWhenClosed = false
 
-        // Ensure the SwiftUI view actually fills the window on first display.
-        hostingController.view.frame = window.contentView?.bounds ?? window.contentRect(forFrameRect: window.frame)
+        // Use contentView + addSubview so the NSHostingController view is forced
+        // to fill the window and cannot collapse to SwiftUI intrinsic size.
+        let container = NSView(frame: initialFrame)
+        container.autoresizingMask = [.width, .height]
+        window.contentView = container
+
+        hostingController.view.frame = container.bounds
         hostingController.view.autoresizingMask = [.width, .height]
+        container.addSubview(hostingController.view)
+
+        // Set the initial content size explicitly.
+        window.setContentSize(NSSize(width: 1280, height: 800))
 
         let controller = WindowController(window: window, manager: manager)
         windows.append(controller)
