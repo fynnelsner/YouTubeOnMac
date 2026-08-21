@@ -31,7 +31,7 @@ The same app runs natively on Apple Silicon (`arm64`) and Intel (`x86_64`) Macs 
 
 ## Installation
 
-1. Download `YouTubeOnMac-v3.3.1.dmg` from [Releases](https://github.com/fynnelsner/YouTubeOnMac/releases).
+1. Download `YouTubeOnMac-v3.3.2.dmg` from [Releases](https://github.com/fynnelsner/YouTubeOnMac/releases).
 2. Open the DMG and drag **YouTubeOnMac** into your **Applications** folder.
 3. Launch the app from Applications.
 
@@ -79,13 +79,15 @@ hdiutil create -volname "YouTubeOnMac" -srcfolder /tmp/YouTubeOnMac \
 
 | Shortcut | Action |
 |----------|--------|
+| `⌘R` | Reload current tab |
 | `⌘N` | New window |
 | `⌘T` | New tab |
 | `⌘W` | Close tab |
 | `^⇥` | Next tab |
 | `^⇧⇥` | Previous tab |
 | `⌘1` … `⌘9` | Jump to tab 1–9 |
-| `⌃⌘F` | Toggle inline fullscreen |
+| `⌃⌘F` | Toggle app native fullscreen (new Space) |
+| `⌃⌘I` | Toggle video inline fullscreen |
 | `F` | Toggle inline fullscreen (when video player is focused) |
 | `Esc` | Exit inline fullscreen |
 

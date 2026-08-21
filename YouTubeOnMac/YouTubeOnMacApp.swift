@@ -119,6 +119,8 @@ final class YouTubeOnMacApp: NSObject, NSApplicationDelegate {
 
         let viewMenu = NSMenuItem()
         viewMenu.submenu = NSMenu(title: "View")
+        viewMenu.submenu?.addItem(withTitle: "Reload Page", action: #selector(reloadPage), keyEquivalent: "r")
+        viewMenu.submenu?.addItem(NSMenuItem.separator())
         viewMenu.submenu?.addItem(withTitle: "Toggle Full Screen", action: #selector(toggleFullScreen), keyEquivalent: "f")
         viewMenu.submenu?.items.last?.keyEquivalentModifierMask = [.control, .command]
         viewMenu.submenu?.addItem(withTitle: "Toggle Inline Fullscreen", action: #selector(toggleInlineFullscreen), keyEquivalent: "i")
@@ -148,6 +150,10 @@ final class YouTubeOnMacApp: NSObject, NSApplicationDelegate {
     }
     @objc private func toggleFullScreen() {
         NSApp.keyWindow?.toggleFullScreen(nil)
+    }
+
+    @objc private func reloadPage() {
+        windowManager.keyWindowManager()?.selectedTab?.webView.reload()
     }
 
     @objc private func toggleInlineFullscreen() {
